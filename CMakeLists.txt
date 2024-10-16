@@ -19,63 +19,76 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(stringreverse C CXX)
+project(paxos C CXX)
 
 include(common.cmake)
 
 
 # Proto file
-get_filename_component(hw_proto "./src/proto/stringreverse.proto" ABSOLUTE)
-get_filename_component(hw_proto_path "${hw_proto}" PATH)
+get_filename_component(paxos_proto "./src/proto/paxos.proto" ABSOLUTE)
+get_filename_component(paxos_proto_path "${paxos_proto}" PATH)
 
 # Generated sources
-set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/stringreverse.pb.cc")
-set(hw_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/stringreverse.pb.h")
-set(hw_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/stringreverse.grpc.pb.cc")
-set(hw_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/stringreverse.grpc.pb.h")
+set(paxos_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxos.pb.cc")
+set(paxos_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxos.pb.h")
+set(paxos_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxos.grpc.pb.cc")
+set(paxos_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxos.grpc.pb.h")
 add_custom_command(
-      OUTPUT "${hw_proto_srcs}" "${hw_proto_hdrs}" "${hw_grpc_srcs}" "${hw_grpc_hdrs}"
+      OUTPUT "${paxos_proto_srcs}" "${paxos_proto_hdrs}" "${paxos_grpc_srcs}" "${paxos_grpc_hdrs}"
       COMMAND ${_PROTOBUF_PROTOC}
       ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
         --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
-        -I "${hw_proto_path}"
+        -I "${paxos_proto_path}"
         --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
-        "${hw_proto}"
-      DEPENDS "${hw_proto}")
+        "${paxos_proto}"
+      DEPENDS "${paxos_proto}")
+
 
 # Include generated *.pb.h files
-include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+include_directories(${CMAKE_CURRENT_BINARY_DIR} 
+  ${CMAKE_CURRENT_SOURCE_DIR} 
+  "${CMAKE_CURRENT_SOURCE_DIR}/types"
+  "${CMAKE_CURRENT_SOURCE_DIR}/utils")
 
-# hw_grpc_proto
-add_library(hw_grpc_proto
-  ${hw_grpc_srcs}
-  ${hw_grpc_hdrs}
-  ${hw_proto_srcs}
-  ${hw_proto_hdrs})
-target_link_libraries(hw_grpc_proto
+# paxos_grpc_proto
+add_library(paxos_grpc_proto
+  ${paxos_grpc_srcs}
+  ${paxos_grpc_hdrs}
+  ${paxos_proto_srcs}
+  ${paxos_proto_hdrs})
+target_link_libraries(paxos_grpc_proto
   absl::check
   ${_REFLECTION}
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
-add_executable(server "./src/server.cc")
-target_link_libraries(server
-hw_grpc_proto
-absl::check
-absl::flags
-absl::flags_parse
-absl::log
-${_REFLECTION}
-${_GRPC_GRPCPP}
-${_PROTOBUF_LIBPROTOBUF})
-
-add_executable(client "./src/client.cc")
+# Add client subdirectory
+add_subdirectory(src/client)
 target_link_libraries(client
-hw_grpc_proto
-absl::check
-absl::flags
-absl::flags_parse
-absl::log
-${_REFLECTION}
-${_GRPC_GRPCPP}
-${_PROTOBUF_LIBPROTOBUF})
+  paxos_grpc_proto
+  absl::check
+  absl::flags
+  absl::flags_parse
+  absl::log
+  ${_REFLECTION}
+  ${_GRPC_GRPCPP}
+  ${_PROTOBUF_LIBPROTOBUF})
+
+# Add utils subdirectory
+add_subdirectory(src/utils)
+target_link_libraries(utils client)
+
+add_executable(server "src/server/server.cc")
+target_link_libraries(server
+  paxos_grpc_proto
+  absl::check
+  absl::flags
+  absl::flags_parse
+  absl::log
+  ${_REFLECTION}
+  ${_GRPC_GRPCPP}
+  ${_PROTOBUF_LIBPROTOBUF})
+
+add_executable(driver "src/driver.cc")
+target_link_libraries(driver utils)
+  

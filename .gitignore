@@ -1,2 +1,4 @@
+.vscode
+.github
 /grpc
 /build

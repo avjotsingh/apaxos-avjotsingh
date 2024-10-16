@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package paxos;
+
+/*
+ * Paxos service definition
+ */
+service Paxos {
+
+    // Function to request transfer of amount
+    rpc Transfer (TransferReq) returns (TransferRes) {}
+
+    // Function to print client's balance
+    rpc GetBalance (google.protobuf.Empty) returns (Balance) {}
+
+    // Function to print server's local logs
+    rpc GetLogs (google.protobuf.Empty) returns (Logs) {}
+
+    // Function to print server's persisted transaction blocks
+    rpc GetDBLogs (google.protobuf.Empty) returns (Logs) {}
+
+    // Function to send prepare request
+    rpc Prepare (PrepareReq) returns (PrepareRes) {}
+
+    // Function to request acceptance of a value
+    rpc Accept (AcceptReq) returns (AcceptRes) {}
+
+    // Function to commit a transaction block
+    rpc Commit (CommitReq) returns (CommitRes) {}
+}
+
+
+/*
+ * Message definitions
+ */
+
+// Money transfer request
+message TransferReq {
+    string receiver = 1;
+    int32 amount = 2;
+}
+
+// Response to money transfer request
+message TransferRes {
+    bool ack = 1;
+}
+
+message Balance {
+    int32 amount = 1;
+}
+
+// Proposal that is sent during the prepare phase
+message Proposal {
+    int32 number = 1;
+    string server_id = 2;
+}
+
+// An individual transaction 
+message Transaction {
+    string id = 1;
+    string sender = 2;
+    string receiver = 3;
+    int32 amount = 4;
+}
+
+message Logs {
+    repeated Transaction logs = 1;
+}
+
+// The prepare message to initiate consensus
+message PrepareReq {
+    Proposal proposal = 1;
+    int32 last_committed_block = 2;
+}
+
+// The promise message sent as response to prepare
+message PrepareRes {
+    bool ack = 1;
+    Proposal proposal = 2;
+    optional Proposal accept_num = 3;
+    Logs accept_val = 4;
+    Logs logs = 5;
+}
+
+// Accept request sent by proposer
+message AcceptReq {
+    Proposal proposal = 1;
+    repeated Transaction block = 2;
+    string block_id = 3;
+}
+
+// Accept response sent by acceptors
+message AcceptRes {
+    bool ack = 1;
+}
+
+// Commit request sent by proposer
+message CommitReq {
+    string block_id = 1;
+}
+
+// Commit response sent by acceptor
+message CommitRes {
+    bool ack = 1;
+}
