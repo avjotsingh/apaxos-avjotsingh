@@ -1,0 +1,8 @@
+- persist the proposal number on disk 
+- send prepares all at the same time
+- synchronize the slow server (asynchronously)
+- passive catch-up mechanism (if received last commited id > server's last committed id)
+- do not send a reply message to client if transaction fails
+- add timeout after receiving majority of promise messages
+- synchronize acceptor if accept val is already committed (reset acceptor's acceptnum and acceptval)
+- randomize delays after prepare phase failure

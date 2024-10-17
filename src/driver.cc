@@ -5,7 +5,7 @@
 #include <regex>
 #include <vector>
 
-#include "client_pool.h"
+#include "app_client_pool.h"
 #include "utils/commands_parser.h"
 #include "utils/csv_reader.h"
 #include "utils/handlers.h"
@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
     try {
         Utils::initializeServers();
         sleep(1);
-        ClientPool::initializeClients();
+        AppClientPool::initializeClients();
 
         CSVReader* reader = new CSVReader(filename);
         mainloop(reader);

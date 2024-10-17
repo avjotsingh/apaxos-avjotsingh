@@ -34,7 +34,7 @@ types::Transaction CSVReader::parseTransaction(const std::string& column) {
     std::string receiver = fields.at(1);
     int amount = std::stoi(fields.at(2));
 
-    struct types::Transaction t = { "", sender, receiver, amount };
+    struct types::Transaction t = { -1, sender, receiver, amount };
     return t;
 }
         

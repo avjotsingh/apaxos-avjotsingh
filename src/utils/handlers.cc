@@ -4,7 +4,7 @@
 #include "csv_reader.h"
 #include "../types/transaction.h"
 #include "utils.h"
-#include "../client/client_pool.h"
+#include "../client/app_client_pool.h"
 
 namespace handlers {
     void handleProcessNextSet(CSVReader* reader) {
@@ -26,19 +26,19 @@ namespace handlers {
         }
 
         for (types::Transaction& t: set.transactions) {
-            PaxosClient* client = ClientPool::getClient(t.sender);
+            AppClient* client = AppClientPool::getClient(t.sender);
             client->TransferAmount(t.receiver, t.amount);
         } 
     }
 
     void handlePrintBalance(std::string serverName) {
-        PaxosClient* client = ClientPool::getClient(serverName);
+        AppClient* client = AppClientPool::getClient(serverName);
         int balance = client->GetBalance();
         std::cout << "Balance on " << serverName << ": " << balance << std::endl;
     }
 
     void handlePrintLogs(std::string serverName) {
-        PaxosClient* client = ClientPool::getClient(serverName);
+        AppClient* client = AppClientPool::getClient(serverName);
         std::vector<types::Transaction> logs = client->GetLogs();
         std::cout << "Local logs on " << serverName << ": " << std::endl;
         for (types::Transaction& t: logs) {
@@ -47,7 +47,7 @@ namespace handlers {
     }
 
     void handlePrintDBLogs(std::string serverName) {
-        PaxosClient* client = ClientPool::getClient(serverName);
+        AppClient* client = AppClientPool::getClient(serverName);
         std::vector<types::Transaction> logs = client->GetDBLogs();
         std::cout << "DB logs on " << serverName << ": " << std::endl;
         for (types::Transaction& t: logs) {

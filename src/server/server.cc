@@ -1,7 +1,9 @@
 #include <string.h>
+#include <set>
 #include <grpcpp/grpcpp.h>
 #include "paxos.grpc.pb.h"
 #include "../types/transaction.h"
+#include "../client/client_pool.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -30,11 +32,68 @@ private:
   int balance;
   int currentProposalNum;
   int currentTransactionNum;
-  int acceptedProposalNum;
+  
+  types::Proposal acceptedProposal;
+  std::vector<types::Transaction> acceptedLogs;
+  std::string acceptedBlockId;
+
   int lastCommittedBlock;
-  std::vector<types::Transaction> acceptedTransactions;
   std::vector<types::Transaction> localLogs;
-  std::vector<types::Transaction> dbLogs;
+  std::vector<types::TransactionBlock> committedBlocks;
+
+  std::vector<PaxosClient*> clients;
+
+
+  void populateAcceptNum(Proposal* accept_num) {
+    accept_num->set_number(acceptedProposal.proposalNum);
+    accept_num->set_server_id(acceptedProposal.serverName);
+  }
+
+  void populateLocalLogs(Logs* logs) {
+    for (auto l : this->localLogs) {
+          Transaction* t = logs->add_logs();
+          t->set_id(l.id);
+          t->set_sender(l.sender);
+          t->set_receiver(l.receiver);
+          t->set_amount(l.amount);
+        }
+  }
+
+  void acceptLogs(std::vector<types::Transaction> logs) {
+    // Update the client's balance
+    for (auto log : logs) {
+      if (log.receiver == serverName) {
+        balance += log.amount;
+      }
+    }
+
+    std::set<types::Transaction> existing(localLogs.begin(), localLogs.end());
+    std::set<types::Transaction> incoming(logs.begin(), logs.end());
+    std::set<types::Transaction> result;
+
+    std::set_difference(existing.begin(), existing.end(), 
+      incoming.begin(), incoming.end(), 
+      std::inserter(result, result.begin()));
+
+    localLogs.clear();
+    for (auto log : result) {
+      localLogs.push_back({ log.id, log.sender, log.receiver, log.amount });
+    }
+  }
+
+  void commitLogs() {
+    committedBlocks.push_back({ acceptedBlockId, acceptedLogs });
+  }
+
+  void populateAcceptedVal(Logs* logs) {
+    for (auto l : this->acceptedLogs) {
+          Transaction* t = logs->add_logs();
+          t->set_id(l.id);
+          t->set_sender(l.sender);
+          t->set_receiver(l.receiver);
+          t->set_amount(l.amount);
+        }
+  }
 
 
 public:
@@ -43,11 +102,16 @@ public:
     this->balance = 100;
     this->currentProposalNum = 0;
     this->currentTransactionNum = 0;
-    this->acceptedProposalNum = 0;
-    this->acceptedTransactions = std::vector<types::Transaction>();
 
+    this->acceptedProposal = { 0, "" };
+    this->acceptedLogs = std::vector<types::Transaction>();
+    this->acceptedBlockId = "";
+
+    this->lastCommittedBlock = 0;
     this->localLogs = std::vector<types::Transaction>();
-    this->dbLogs = std::vector<types::Transaction>();
+    this->committedBlocks = std::vector<types::TransactionBlock>();
+
+    this->clients = ClientPool::getClientsForServer(serverName);
   }
     
 
@@ -68,6 +132,23 @@ public:
       proposal->set_number(this->currentProposalNum);
       proposal->set_server_id(this->serverName);
       req->set_last_committed_block(this->lastCommittedBlock);
+
+      // TODO: Implement consensus
+      
+      // Send prepare requests to all other servers
+      int numPromises = 0;
+      int acceptNum = 0;
+      
+      for (auto c : clients) {
+        PrepareRes res = c->Prepare(*req);
+        if (res.ack()
+          && res.proposal().number() == currentProposalNum
+          && res.proposal().server_id() == serverName) {
+            numPromises++;
+            res.logs()
+          }
+ 
+      }
 
     }
 
@@ -115,39 +196,85 @@ public:
     std::string proposerId = request->proposal().server_id();
     int lastCommittedBlock = request->last_committed_block();
 
-    std::cout << "[Prepare] " << "proposer " << proposerId << " proposal_num " << proposalNum << " last_commited_block " << lastCommittedBlock << std::endl;
-
-    response->set_ack(true);
     Proposal* proposal = response->mutable_proposal();
     proposal->set_number(proposalNum);
     proposal->set_server_id(proposerId);
-
-    Proposal* accept_num = response->mutable_accept_num();
-    accept_num->set_number(proposalNum);
-    accept_num->set_server_id(proposerId);
-
     
+    if (this->acceptedProposal.proposalNum == 0 
+      && proposalNum > this->currentProposalNum
+      && lastCommittedBlock >= this->lastCommittedBlock) {
+        // acceptor has not accepted proposal from anybody else
+        // proposer's committed log is as big as acceptor's
+        this->acceptedProposal.proposalNum = proposalNum;
+        this->acceptedProposal.serverName = proposerId;
+        this->currentProposalNum = proposalNum;
+
+        response->set_ack(true);
+        populateLocalLogs(response->mutable_logs())
+        
+    } else if (proposalNum > this->currentProposalNum
+      && lastCommittedBlock >= this->lastCommittedBlock) {
+        // acceptor has accepted a proposal from somebody else
+        res->set_ack(true);
+        // populateLocalLogs(response->mutable_logs());
+        populateAcceptNum(response->mutable_accept_num());
+        populateAcceptedVal(response->mutable_accept_val());
+        
+      } else {
+        // the proposer needs to catch up
+        res->set_ack(false);
+        populateLocalLogs(response->mutable_logs());
+      }
+      
     return Status::OK;
   }
 
 
   Status Accept(ServerContext* context, const AcceptReq* request, AcceptRes* response) override {
     int proposalNum = request->proposal().number();
-    int proposerId = request->proposal().number();
-    std::string blockId = request->block_id();
+    std::string proposerId = request->proposal().server_id();
 
-    for (auto &transaction: request->block()) {
-      std::cout << "Transaction: (" << transaction.sender() << ", " << transaction.receiver() << ", " << transaction.amount() << ")" << std::endl;
-    }
+    if (proposalNum == acceptedProposal.proposalNum
+      && proposerId == acceptedProposal.serverName) {
+        // The accept request matches the last promised request
+        std::vector<types::Transaction> logs;
+        for (int i = 0; i < request->block_size(); i++) {
+          Transaction& t = request->block(i);
+          logs.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
+        }
 
-    response->set_ack(true);
+        acceptLogs(logs);
+        acceptedBlockId = request->block_id();
+        response->set_ack(true);
+      } else {
+        response->set_ack(false);
+      }
+
     return Status::OK;
   }
 
   Status Commit(ServerContext* context, const CommitReq* request, CommitRes* response) override {
-    std::string blockId = request->block_id();
+    int blockId = request->block_id();
+    if (blockId == acceptedBlockId) {
+      // commit request matches the last accepted request
+      std::vector<types::Transaction> logs;
+      for (int i = 0; i < request->block_size(); i++) {
+        Transaction& t = request->block(i);
+        logs.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
+      }
 
-    response->set_ack(true);
+      commitLogs(logs);
+      acceptedProposal.proposalNum = 0;
+      acceptedProposal.serverName = "";
+      acceptedLogs.clear();
+      acceptedBlockId = "";
+      lastCommittedBlock = blockId;
+
+      response->set_ack(true);
+    } else {
+      response->set_ack(false);
+    }
+
     return Status::OK;
   }
 };

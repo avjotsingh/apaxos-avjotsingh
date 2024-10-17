@@ -9,19 +9,22 @@ using grpc::Channel;
 using grpc::ClientContext;
 
 using paxos::Paxos;
+using paxos::PrepareReq;
+using paxos::PrepareRes;
+using paxos::AcceptReq;
+using paxos::AcceptRes;
+using paxos::CommitReq;
+using paxos::CommitRes;
 
 
-class PaxosClient {
+class AppClient {
 public:
-    PaxosClient(std::string serverName, std::string targetAddress);
+    AppClient(std::string serverName, std::string targetAddress);
     bool TransferAmount(std::string receiver, int amount);
     int GetBalance();
     std::vector<types::Transaction> GetLogs();
     std::vector<types::Transaction> GetDBLogs();
-    void Prepare();
-    void Accept();
-    void Commit();
-
+    
 private:
     std::string serverName;
     std::shared_ptr<Channel> channel;

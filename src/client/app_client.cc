@@ -1,6 +1,6 @@
 #include <stdexcept>
 #include <vector>
-#include "client.h"
+#include "app_client.h"
 
 using grpc::Status;
 using google::protobuf::Empty;
@@ -12,13 +12,13 @@ using paxos::Logs;
 using paxos::Transaction;
 
 
-PaxosClient::PaxosClient(std::string serverName, std::string targetAddress) {
+AppClient::AppClient(std::string serverName, std::string targetAddress) {
     this->serverName = serverName;
     this->channel = grpc::CreateChannel(targetAddress, grpc::InsecureChannelCredentials()),
     this->stub_ = Paxos::NewStub(channel);
 }
 
-bool PaxosClient::TransferAmount(std::string receiver, int amount) {
+bool AppClient::TransferAmount(std::string receiver, int amount) {
     TransferReq req;
     req.set_receiver(receiver);
     req.set_amount(amount);
@@ -30,11 +30,11 @@ bool PaxosClient::TransferAmount(std::string receiver, int amount) {
     if (status.ok()) {
         return res.ack();
     } else {
-        throw std::runtime_error("Exception: " + std::to_string(status.error_code()) + " " + status.error_message());        
+        throw std::runtime_error("Exception: [" + this->serverName + "] " + std::to_string(status.error_code()) + " " + status.error_message());        
     }
 }
 
-int PaxosClient::GetBalance() {
+int AppClient::GetBalance() {
     Empty req;
     ClientContext context;
     Balance res;
@@ -47,7 +47,7 @@ int PaxosClient::GetBalance() {
     }
 } 
 
-std::vector<types::Transaction> PaxosClient::GetLogs() {
+std::vector<types::Transaction> AppClient::GetLogs() {
     Empty req;
     ClientContext context;
     Logs res;
@@ -58,7 +58,7 @@ std::vector<types::Transaction> PaxosClient::GetLogs() {
         int logs_count = res.logs_size();
         if (logs_count > 0) {
             for (int i = 0; i < logs_count; i++) {
-                std::string id = res.logs(i).id();
+                int id = res.logs(i).id();
                 std::string sender = res.logs(i).sender();
                 std::string receiver = res.logs(i).receiver();
                 int amount = res.logs(i).amount();
@@ -72,7 +72,7 @@ std::vector<types::Transaction> PaxosClient::GetLogs() {
     }
 } 
 
-std::vector<types::Transaction> PaxosClient::GetDBLogs() {
+std::vector<types::Transaction> AppClient::GetDBLogs() {
     Empty req;
     ClientContext context;
     Logs res;
@@ -83,7 +83,7 @@ std::vector<types::Transaction> PaxosClient::GetDBLogs() {
         std::vector<types::Transaction> logs;
         if (logs_count > 0) {
             for (int i = 0; i < logs_count; i++) {
-                std::string id = res.logs(i).id();
+                int id = res.logs(i).id();
                 std::string sender = res.logs(i).sender();
                 std::string receiver = res.logs(i).receiver();
                 int amount = res.logs(i).amount();

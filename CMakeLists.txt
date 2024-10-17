@@ -78,9 +78,11 @@ target_link_libraries(client
 add_subdirectory(src/utils)
 target_link_libraries(utils client)
 
-add_executable(server "src/server/server.cc")
+add_executable(server "src/server/async_server.cc" "src/server/call_data.cc")
 target_link_libraries(server
   paxos_grpc_proto
+  utils
+  client
   absl::check
   absl::flags
   absl::flags_parse
