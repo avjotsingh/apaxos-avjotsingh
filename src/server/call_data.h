@@ -1,14 +1,16 @@
 #pragma once
 
 #include <grpcpp/grpcpp.h>
+#include <grpcpp/alarm.h>
 #include "paxos.grpc.pb.h"
-#include "async_server.h"
+#include "../server/async_server.h"
 #include "../types/request_types.h"
 
 using grpc::ServerAsyncResponseWriter;
 using grpc::ServerCompletionQueue;
 using grpc::ServerContext;
 using google::protobuf::Empty;
+using grpc::Alarm;
 
 using paxos::Paxos;
 using paxos::Transaction;
@@ -22,11 +24,14 @@ using paxos::AcceptReq;
 using paxos::AcceptRes;
 using paxos::CommitReq;
 using paxos::CommitRes;
+using paxos::SuccessReq;
+using paxos::SuccessRes;
 
 class CallData {
 public:
     CallData(Paxos::AsyncService* service, PaxosServer* server, ServerCompletionQueue* cq, types::RequestTypes type);
     void Proceed();
+    void Retry();
 
 private:
     Paxos::AsyncService* service_;
@@ -50,6 +55,8 @@ private:
     AcceptRes acceptRes;
     CommitReq commitReq;
     CommitRes commitRes;
+    SuccessReq successReq;
+    SuccessRes successRes;
 
     // The means to get back to the client.
     ServerAsyncResponseWriter<TransferRes> transferResponder;
@@ -59,9 +66,17 @@ private:
     ServerAsyncResponseWriter<PrepareRes> prepareResponder;
     ServerAsyncResponseWriter<AcceptRes> acceptResponder;
     ServerAsyncResponseWriter<CommitRes> commitResponder;
+    ServerAsyncResponseWriter<SuccessRes> successResponder;
 
     // Let's implement a tiny state machine with the following states.
-    enum CallStatus { CREATE, PROCESS, FINISH };
+    enum CallStatus { CREATE, PROCESS, RETRY, FINISH };
     CallStatus status_;  // The current serving state.
-    types::RequestTypes callType;    
+    types::RequestTypes callType;   
+
+    int retry_count_;
+    const static int maxRetryCount = 2;
+    std::unique_ptr<grpc::Alarm> alarm_;  // Alarm to schedule retries.
+    int randomBackoff(int minMs, int maxMs);
+    const static int minBackoffMs = 5;
+    const static int maxBackoffMs = 200; 
 };

@@ -48,7 +48,9 @@ add_custom_command(
 include_directories(${CMAKE_CURRENT_BINARY_DIR} 
   ${CMAKE_CURRENT_SOURCE_DIR} 
   "${CMAKE_CURRENT_SOURCE_DIR}/types"
-  "${CMAKE_CURRENT_SOURCE_DIR}/utils")
+  "${CMAKE_CURRENT_SOURCE_DIR}/utils"
+  "${CMAKE_CURRENT_SOURCE_DIR}/client"
+  "${CMAKE_CURRENT_SOURCE_DIR}/server")
 
 # paxos_grpc_proto
 add_library(paxos_grpc_proto
@@ -62,6 +64,12 @@ target_link_libraries(paxos_grpc_proto
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
+
+# Add utils subdirectory
+add_subdirectory(src/utils)
+target_link_libraries(utils)
+
+
 # Add client subdirectory
 add_subdirectory(src/client)
 target_link_libraries(client
@@ -74,14 +82,14 @@ target_link_libraries(client
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
-# Add utils subdirectory
-add_subdirectory(src/utils)
-target_link_libraries(utils client)
+# Gather all .cc files in the server directory
+file(GLOB_RECURSE SERVER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/server/*.cc" "src/constants.cc")
 
-add_executable(server "src/server/async_server.cc" "src/server/call_data.cc")
+message(STATUS "SERVER_SOURCES: ${SERVER_SOURCES}")
+
+add_executable(server ${SERVER_SOURCES})
 target_link_libraries(server
   paxos_grpc_proto
-  utils
   client
   absl::check
   absl::flags
@@ -91,6 +99,6 @@ target_link_libraries(server
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
-add_executable(driver "src/driver.cc")
-target_link_libraries(driver utils)
+add_executable(driver "src/driver.cc" "src/constants.cc")
+target_link_libraries(driver utils client)
   

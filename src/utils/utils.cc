@@ -4,29 +4,20 @@
 #include <sys/wait.h>
 #include <csignal>
 #include "utils.h"
+#include "../constants.h"
 
-
-std::vector<std::string> Utils::serverNames = { "S1", "S2", "S3", "S4", "S5" };
-
-std::map<std::string, std::string> Utils::serverAddresses = {
-    { "S1", "localhost:50051" },
-    { "S2", "localhost:50052" },
-    { "S3", "localhost:50053" },
-    { "S4", "localhost:50054" },
-    { "S5", "localhost:50055" }
-};
 
 std::map<std::string, int> Utils::serverPIDs = {};
 
 void Utils::initializeServers() {
-    for (std::string& s: Utils::serverNames) {
+    for (std::string& s: Constants::serverNames) {
         Utils::startServer(s);
     }
 }
 
 void Utils::startServer(std::string serverName) {
-    auto it = Utils::serverAddresses.find(serverName);
-    if (it == Utils::serverAddresses.end()) {
+    auto it = Constants::serverAddresses.find(serverName);
+    if (it == Constants::serverAddresses.end()) {
         throw std::invalid_argument("Invalid server name: " + serverName);
     } 
     
@@ -52,8 +43,8 @@ void Utils::startServer(std::string serverName) {
 }
 
 void Utils::killServer(std::string serverName) {
-    auto it = Utils::serverAddresses.find(serverName);
-    if (it == Utils::serverAddresses.end()) {
+    auto it = Constants::serverAddresses.find(serverName);
+    if (it == Constants::serverAddresses.end()) {
         throw std::invalid_argument("Invalid server name: " + serverName);
     }
 

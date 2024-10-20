@@ -5,8 +5,6 @@
 
 class Utils {
 public:
-    static std::vector<std::string> serverNames;
-    static std::map<std::string, std::string> serverAddresses;
     static void initializeServers();
     static void startServer(std::string serverName);
     static void killServer(std::string serverName);

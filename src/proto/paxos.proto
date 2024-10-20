@@ -29,6 +29,9 @@ service Paxos {
 
     // Function to commit a transaction block
     rpc Commit (CommitReq) returns (CommitRes) {}
+
+    // Function to replicate transaction block
+    rpc Success (SuccessReq) returns (SuccessRes) {}
 }
 
 
@@ -45,6 +48,7 @@ message TransferReq {
 // Response to money transfer request
 message TransferRes {
     bool ack = 1;
+    string server_id = 2;
 }
 
 message Balance {
@@ -79,33 +83,48 @@ message PrepareReq {
 message PrepareRes {
     bool ack = 1;
     Proposal proposal = 2;
-    Proposal accept_num = 3;
-    Logs accept_val = 4;
-    Logs logs = 5;
+    optional Proposal accept_num = 3;
+    optional Logs accept_val = 4;
+    optional Logs logs = 5;
 }
 
 // Accept request sent by proposer
 message AcceptReq {
     Proposal proposal = 1;
-    repeated Transaction block = 2;
-    int32 block_id = 3;
+    int32 last_committed_block = 2;
+    Logs logs = 3;
 }
 
 // Accept response sent by acceptors
 message AcceptRes {
-    Proposal proposal = 1;
-    bool ack = 2;
+    bool ack = 1;
+    Proposal proposal = 2;
+    string server_id = 3;
+    optional int32 last_committed_block = 4;    // needed for server to decide whether to catch-up or not
 }
 
 // Commit request sent by proposer
 message CommitReq {
-    string server_id = 1;
-    int32 block_id = 2;
+    Proposal proposal = 1;
+    int32 last_committed_block = 2;
 }
 
 // Commit response sent by acceptor
 message CommitRes {
-    string server_id = 1;
+    bool ack = 1;
+    Proposal proposal = 2;
+}
+
+// Combination of AcceptReq + CommitReq (used for catch up)
+message SuccessReq {
+    // proposal number corresponding to the committed block
+    Proposal proposal = 1;
     int32 block_id = 2;
-    bool ack = 3;
+    Logs block = 4;
+}
+
+message SuccessRes {
+    bool ack = 1;
+    string server_id = 2;
+    int32 last_committed_block = 3;
 }

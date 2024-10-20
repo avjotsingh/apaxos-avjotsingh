@@ -37,6 +37,7 @@ namespace types {
 
     struct TransactionBlock {
         int id;
+        types::Proposal commitProposal;
         std::vector<Transaction> block;
     };
 }

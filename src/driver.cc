@@ -5,19 +5,26 @@
 #include <regex>
 #include <vector>
 
-#include "app_client_pool.h"
+#include "client/app_client.h"
 #include "utils/commands_parser.h"
 #include "utils/csv_reader.h"
-#include "utils/handlers.h"
 #include "utils/utils.h"
+#include "constants.h"
 
-void mainloop(CSVReader* reader) {
+void mainloop(CSVReader* reader, AppClient* client) {
     CommandsParser parser;
-    while(1) {
-        std::string command;
+    bool exit = false;
+    std::string command;
+    types::AppCommand c;
+    types::TransactionSet set;
+    int balance;
+    std::vector<types::Transaction> logs;
+    std::vector<types::Transaction> dbLogs;
+
+
+    while(!exit) {
         parser.promptUserForCommand(command);
-        
-        types::AppCommand c;
+
         try {
             c = parser.parseCommand(command);
         } catch (const std::invalid_argument& e) {
@@ -29,22 +36,48 @@ void mainloop(CSVReader* reader) {
         try {
             switch (c.command) {
                 case types::PROCESS_NEXT_SET:
-                    handlers::handleProcessNextSet(reader);
+                    std::cout << "Processing next set of transactions...";
+                    if (!reader->readNextSet(set)) {
+                        std::cout << "No more transaction sets to read..." << std::endl;
+                    } else {
+                        // make sure the desired (or undesired) servers and up (or down)
+                        for (std::string& s: Constants::serverNames) {
+                            if (std::find(set.servers.begin(), set.servers.end(), s) != set.servers.end()) {
+                                // ensure that the desired servers are running
+                                Utils::startServer(s);
+                            } else {
+                                // ensure that the servers not in the transaction set are stopped
+                                Utils::killServer(s);
+                            }
+                        }
+                        client->processTransactions(set.transactions);
+                    }
                     break;
                 case types::PRINT_BALANCE:
-                    handlers::handlePrintBalance(c.serverName);
+                    balance = client->GetBalance(c.serverName);
+                    std::cout << "Balance on " << c.serverName << ": " << balance << std::endl;
                     break;
                 case types::PRINT_LOG:
-                    handlers::handlePrintLogs(c.serverName);
+                    logs = client->GetLogs(c.serverName);
+                    std::cout << "Local logs on " << c.serverName << ": " << std::endl;
+                    for (types::Transaction& t: logs) {
+                        std::cout << "(" << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
+                    }
                     break;
                 case types::PRINT_DB:
-                    handlers::handlePrintDBLogs(c.serverName);
+                    dbLogs = client->GetDBLogs(c.serverName);
+                    std::cout << "DB logs on " << c.serverName << ": " << std::endl;
+                    for (types::Transaction& t: dbLogs) {
+                        std::cout << "(" << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
+                    }
                     break;
                 case types::EXIT:
                     std::cout << "Exiting..." << std::endl;
-                    return;
+                    exit = true;
+                    break;
                 default:
                     std::runtime_error("Unknown command type: " + std::to_string(c.command));
+                    break;
             }
         } catch (std::runtime_error& e) {
             std::cerr << "Exception: " << e.what() << std::endl;
@@ -64,10 +97,9 @@ int main(int argc, char **argv) {
     try {
         Utils::initializeServers();
         sleep(1);
-        AppClientPool::initializeClients();
-
+        AppClient* client = new AppClient(); 
         CSVReader* reader = new CSVReader(filename);
-        mainloop(reader);
+        mainloop(reader, client);
     } catch (const std::exception& e) {
         std::cerr << "Exception: " << e.what() << std::endl;
         exit(1);
