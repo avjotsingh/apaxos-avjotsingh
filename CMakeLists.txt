@@ -82,15 +82,22 @@ target_link_libraries(client
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
+
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/src/thirdparty/SQLiteCpp)
+
 # Gather all .cc files in the server directory
 file(GLOB_RECURSE SERVER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/server/*.cc" "src/constants.cc")
 
 message(STATUS "SERVER_SOURCES: ${SERVER_SOURCES}")
 
-add_executable(server ${SERVER_SOURCES})
-target_link_libraries(server
+add_executable(paxosserver ${SERVER_SOURCES})
+target_link_libraries(paxosserver
   paxos_grpc_proto
   client
+  SQLiteCpp
+  sqlite3
+  pthread
+  dl
   absl::check
   absl::flags
   absl::flags_parse
