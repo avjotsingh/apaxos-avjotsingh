@@ -15,6 +15,12 @@ void Utils::initializeServers() {
     }
 }
 
+void Utils::killAllServers() {
+    for (std::string& s:  Constants::serverNames) {
+        Utils::killServer(s);
+    }
+}
+
 void Utils::startServer(std::string serverName) {
     auto it = Constants::serverAddresses.find(serverName);
     if (it == Constants::serverAddresses.end()) {
@@ -34,12 +40,14 @@ void Utils::startServer(std::string serverName) {
             std::cout << "Started server " + serverName + " on " + targetAddress << "..." << std::endl;
         } else {
             // server process
-            execl("./server", "server", serverName.c_str(), targetAddress.c_str(), nullptr);
+            execl("./paxosserver", "paxosserver", serverName.c_str(), targetAddress.c_str(), nullptr);
 
             // if execl fails
             throw std::runtime_error("Failed to start server: " + serverName);
         }
     }
+
+    sleep(2);
 }
 
 void Utils::killServer(std::string serverName) {
@@ -60,4 +68,6 @@ void Utils::killServer(std::string serverName) {
             throw std::runtime_error("Failed to kill server: " + serverName);
         }
     }
+
+    sleep(1);
 }

@@ -72,6 +72,7 @@ void CallData::Proceed() {
                     transferResponder.Finish(transferRes, Status::OK, this);
                     status_ = FINISH;
                 } else {
+                    // std::cout << "retry transfer" << std::endl;
                     status_ = RETRY;
                     Retry();
                 }
@@ -155,8 +156,9 @@ int CallData::randomBackoff(int min_ms, int max_ms) {
     return dist(gen);
 }
 
-void CallData::Retry() {    
-    int backoff = randomBackoff(minBackoffMs, maxBackoffMs);
+void CallData::Retry() {  
+    int delayMs = 10;
     alarm_ = std::make_unique<grpc::Alarm>();
-    alarm_->Set(cq_, gpr_time_from_millis(backoff, GPR_TIMESPAN), this);
+    alarm_->Set(cq_, gpr_time_from_millis(delayMs, GPR_TIMESPAN), this);
+    // alarm_->Set(cq_, gpr_time_0(GPR_CLOCK_REALTIME), this);
 }

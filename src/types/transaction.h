@@ -27,6 +27,10 @@ namespace types {
                 && receiver == other.receiver 
                 && amount == other.amount;
         }
+
+        std::string toString() {
+            return "{" + std::to_string(id) + "," + sender + "," + receiver + "," + std::to_string(amount) + "}";
+        }
     };
 
     struct TransactionSet {

@@ -6,6 +6,7 @@
 class Utils {
 public:
     static void initializeServers();
+    static void killAllServers();
     static void startServer(std::string serverName);
     static void killServer(std::string serverName);
 

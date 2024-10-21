@@ -77,6 +77,9 @@ private:
     const static int maxRetryCount = 2;
     std::unique_ptr<grpc::Alarm> alarm_;  // Alarm to schedule retries.
     int randomBackoff(int minMs, int maxMs);
-    const static int minBackoffMs = 5;
-    const static int maxBackoffMs = 200; 
+
+    const static int proposerMinBackoff = 5;
+    const static int proposerMaxBackoff = 10;
+    const static int acceptorMinBackoff = 20;
+    const static int acceptorMaxBackoff = 30; 
 };

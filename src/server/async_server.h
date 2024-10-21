@@ -49,6 +49,9 @@ public:
     bool processCommitCall(CommitReq* req, CommitRes* res);
     bool processSuccessCall(SuccessReq* req, SuccessRes* res);
 
+    // bool isProposer();
+    
+
 
 private:
     std::string serverName;
@@ -59,8 +62,8 @@ private:
     // Completion Queue for responses to server's prepare, accept, and commit requests
     std::unique_ptr<CompletionQueue> responseCQ;
 
-    Paxos::AsyncService service;
-    std::unique_ptr<Server> server;
+    Paxos::AsyncService service_;
+    std::unique_ptr<Server> server_;
 
     // Stubs for sending prepare, accept, and commit RPCs to other servers  
     std::vector<std::unique_ptr<Paxos::Stub>> stubs_;
@@ -72,6 +75,9 @@ private:
     
     int balance;
     int currentTransactionNum;
+    std::chrono::time_point<std::chrono::system_clock> consensusDeadline;
+    const static int minBackoffMs = 5;
+    const static int maxBackoffMs = 25;
     std::vector<types::Transaction> localLogs;
 
     types::Proposal myProposal;
@@ -95,15 +101,20 @@ private:
     std::vector<types::TransactionBlock> committedBlocks;
     
     // variables for tracking the state of consensus
-    const static int MAJORITY = 2;
+    const static int MAJORITY = 3;
     int prepareSuccesses;
     int prepareFailures;
     int acceptSuccesses;
     int acceptFailures;
     int commitSuccesses;
     int commitFailures;
+    bool awaitPrepareDecision;
+    bool awaitAcceptDecision;
+    bool awaitCommitDecision;
+    bool transferSuccess;
 
-    void copyProposal(Proposal* from, Proposal* to);
+    std::string dbFilename;
+
     int getServerIdFromName(std::string serverName);
     void sendPrepareToCluster(PrepareReq& request);
     void sendAcceptToCluster(AcceptReq& request);
@@ -114,9 +125,21 @@ private:
     void sendCommitAsync(CommitReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
     void sendSuccessAsync(SuccessReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
 
-    void populateProposal(Proposal* to, types::Proposal from);
-    void populateAcceptNum(Proposal* acceptNum);
-    void populateLocalLogs(Logs* logs);
-    void populateAcceptVal(Logs* logs);
+    void copyProposal(Proposal* to, types::Proposal from);
+    void copyLogs(Logs* logs, std::vector<types::Transaction>& val);
+    std::vector<types::Transaction> getLogsForProposal();
+    void commitAcceptVal();
     void replicateBlock(std::string serverName, int blockId);
+
+    void doCommit();
+    void setupDB();
+    void getLocalLogsDB();
+    void storeLocalLogDB(types::Transaction t);
+    void refreshLocalLogsDB();
+    void getSavedStateDB();
+    void saveStateDB();
+    void getCommittedLogsDB();
+    void commitLogsToDB();
+
+    void resetConsensusDeadline();
 };

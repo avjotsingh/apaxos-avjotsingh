@@ -14,7 +14,7 @@
 - increment current proposal number in case of majority failures
 - sanitize all logs i.e. remove duplicates 
 - a server starting consensus cannot respond to RPCs like other servers** (change the cluster broadcast logic)
-
+- catchup decision should only be made on the basis of committed log length
 
 
 

@@ -54,18 +54,20 @@ void mainloop(CSVReader* reader, AppClient* client) {
                     }
                     break;
                 case types::PRINT_BALANCE:
-                    balance = client->GetBalance(c.serverName);
+                    client->GetBalance(c.serverName, balance);
                     std::cout << "Balance on " << c.serverName << ": " << balance << std::endl;
                     break;
                 case types::PRINT_LOG:
-                    logs = client->GetLogs(c.serverName);
+                    logs.clear();
+                    client->GetLogs(c.serverName, logs);
                     std::cout << "Local logs on " << c.serverName << ": " << std::endl;
                     for (types::Transaction& t: logs) {
                         std::cout << "(" << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
                     }
                     break;
                 case types::PRINT_DB:
-                    dbLogs = client->GetDBLogs(c.serverName);
+                    dbLogs.clear();
+                    client->GetDBLogs(c.serverName, dbLogs);
                     std::cout << "DB logs on " << c.serverName << ": " << std::endl;
                     for (types::Transaction& t: dbLogs) {
                         std::cout << "(" << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
@@ -73,6 +75,7 @@ void mainloop(CSVReader* reader, AppClient* client) {
                     break;
                 case types::EXIT:
                     std::cout << "Exiting..." << std::endl;
+                    Utils::killAllServers();
                     exit = true;
                     break;
                 default:

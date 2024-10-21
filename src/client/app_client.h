@@ -30,9 +30,9 @@ class AppClient {
 public:
     AppClient();
     void processTransactions(std::vector<types::Transaction> transactions);
-    int GetBalance(std::string serverName);
-    std::vector<types::Transaction> GetLogs(std::string serverName);
-    std::vector<types::Transaction> GetDBLogs(std::string serverName);
+    void GetBalance(std::string serverName, int& res);
+    void GetLogs(std::string serverName, std::vector<types::Transaction>& logs);
+    void GetDBLogs(std::string serverName, std::vector<types::Transaction>& logs);
     
     
 private:

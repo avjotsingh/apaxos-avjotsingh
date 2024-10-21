@@ -31,7 +31,7 @@ AppClient::AppClient() {
     for (auto it = Constants::serverAddresses.begin(); it != Constants::serverAddresses.end(); it++) {
         std::string server = it->first;
         std::string targetAddress = it->second;
-        stubs_.push_back(Paxos::NewStub(grpc::CreateChannel(it->first, grpc::InsecureChannelCredentials())));
+        stubs_.push_back(Paxos::NewStub(grpc::CreateChannel(targetAddress, grpc::InsecureChannelCredentials())));
     }
 }
 
@@ -46,6 +46,7 @@ void AppClient::processTransactions(std::vector<types::Transaction> transactions
             if (issued[i] || transferringServers.find(t.sender) != transferringServers.end()) {
                 continue;
             } else {
+                std::cout << "issuing " << t.sender << ", " << t.receiver << ", " << t.amount << std::endl;
                 transferringServers.insert(t.sender);
                 sendTransferAsync(t.sender, t.receiver, t.amount);
                 issued[i] = true;
@@ -55,7 +56,7 @@ void AppClient::processTransactions(std::vector<types::Transaction> transactions
     }
 }
 
-int AppClient::GetBalance(std::string serverName) {
+void AppClient::GetBalance(std::string serverName, int& res) {
     sendGetBalanceAsync(serverName);
 
     void* tag;
@@ -64,66 +65,77 @@ int AppClient::GetBalance(std::string serverName) {
     while (true) {
         grpc::CompletionQueue::NextStatus responseStatus = cq_.AsyncNext(&tag, &ok, gpr_time_0(GPR_CLOCK_REALTIME));
         if (responseStatus == grpc::CompletionQueue::NextStatus::GOT_EVENT) {
+            ClientCall* call = static_cast<ClientCall*>(tag);
             if (ok) {
-                ClientCall* call = static_cast<ClientCall*>(tag);
-                if (call->callType_ == types::GET_BALANCE) {
-                    return call->getBalanceReply.amount();
+                if (!call->status.ok()) {
+                    std::cout << call->status.error_message() << std::endl;
+                } else if (call->callType_ == types::GET_BALANCE) {
+                    res = call->getBalanceReply.amount();
+                    // std::cout << serverName << " get balance reply" << std::endl;
+                    delete call;
+                    break;
                 }
-            } else {
-                delete static_cast<ClientCall*>(tag);
-            }
+            } 
+
+            delete call;
         } 
     }
 }
 
-std::vector<types::Transaction> AppClient::GetLogs(std::string serverName) {
+void AppClient::GetLogs(std::string serverName, std::vector<types::Transaction>& logs) {
     sendGetLogsAsync(serverName);
 
     void* tag;
     bool ok;
-    std::vector<types::Transaction> logs;
 
     while (true) {
         grpc::CompletionQueue::NextStatus responseStatus = cq_.AsyncNext(&tag, &ok, gpr_time_0(GPR_CLOCK_REALTIME));
         if (responseStatus == grpc::CompletionQueue::NextStatus::GOT_EVENT) {
+            ClientCall* call = static_cast<ClientCall*>(tag);
             if (ok) {
-                ClientCall* call = static_cast<ClientCall*>(tag);
-                if (call->callType_ == types::GET_LOGS) {
+                if (!call->status.ok()) {
+                    std::cout << call->status.error_message() << std::endl;
+                } else if (call->callType_ == types::GET_LOGS) {
                     for (int i = 0; i < call->getLogsReply.logs_size(); i++) {
                         const Transaction& t = call->getLogsReply.logs(i);
                         logs.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
                     }
-                    return logs;
+                    // std::cout << serverName << " get logs reply" << std::endl;
+                    delete call;
+                    break;
                 }
-            } else {
-                delete static_cast<ClientCall*>(tag);
             }
+
+            delete call;
         } 
     }
 }
 
-std::vector<types::Transaction> AppClient::GetDBLogs(std::string serverName) {
+void AppClient::GetDBLogs(std::string serverName, std::vector<types::Transaction>& logs) {
     sendGetDBLogsAsync(serverName);
 
     void* tag;
     bool ok;
-    std::vector<types::Transaction> logs;
 
     while (true) {
         grpc::CompletionQueue::NextStatus responseStatus = cq_.AsyncNext(&tag, &ok, gpr_time_0(GPR_CLOCK_REALTIME));
         if (responseStatus == grpc::CompletionQueue::NextStatus::GOT_EVENT) {
+            ClientCall* call = static_cast<ClientCall*>(tag);
             if (ok) {
-                ClientCall* call = static_cast<ClientCall*>(tag);
-                if (call->callType_ == types::GET_DB_LOGS) {
+                if (!call->status.ok()) {
+                    std::cout << call->status.error_message() << std::endl;
+                } else if (call->callType_ == types::GET_DB_LOGS) {
                     for (int i = 0; i < call->getDBLogsReply.logs_size(); i++) {
                         const Transaction& t = call->getDBLogsReply.logs(i);
                         logs.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
                     }
-                    return logs;
+
+                    delete call;
+                    break;
                 }
-            } else {
-                delete static_cast<ClientCall*>(tag);
             }
+
+            delete call;
         } 
     }
 }
@@ -141,14 +153,17 @@ void AppClient::checkAndConsumeTransferReply() {
     grpc::CompletionQueue::NextStatus responseStatus = cq_.AsyncNext(&tag, &ok, gpr_time_0(GPR_CLOCK_REALTIME));
 
     if (responseStatus == grpc::CompletionQueue::NextStatus::GOT_EVENT) {
+        ClientCall* call = static_cast<ClientCall*>(tag);
         if (ok) {
-            ClientCall* call = static_cast<ClientCall*>(tag);
-            if (call->callType_ == types::TRANSFER && call->transferReply.ack()) {
+            if (!call->status.ok()) {
+                std::cout << call->status.error_message() << std::endl;
+            } else if (call->callType_ == types::TRANSFER) {
+                std::cout << "transfer reply " << call->transferReply.server_id() << " " << call->transferReply.ack() << std::endl;
                 transferringServers.erase(call->transferReply.server_id());
             }
-        } else {
-            delete static_cast<ClientCall*>(tag);
         }
+
+        delete call;
     } 
 }
 
