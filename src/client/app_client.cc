@@ -24,7 +24,6 @@ using paxos::PrepareRes;
 using paxos::AcceptRes;
 using paxos::AcceptRes;
 using paxos::CommitReq;
-using paxos::CommitRes;
 
     
 AppClient::AppClient() {

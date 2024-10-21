@@ -6,7 +6,7 @@ namespace types {
         PREPARE,
         ACCEPT,
         COMMIT,
-        SUCCESS,
+        SYNC,
         GET_BALANCE,
         GET_LOGS,
         GET_DB_LOGS

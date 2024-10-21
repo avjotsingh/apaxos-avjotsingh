@@ -23,9 +23,8 @@ using paxos::PrepareRes;
 using paxos::AcceptReq;
 using paxos::AcceptRes;
 using paxos::CommitReq;
-using paxos::CommitRes;
-using paxos::SuccessReq;
-using paxos::SuccessRes;
+using paxos::SyncReq;
+using paxos::SyncRes;
 
 // Server Implementation
 class PaxosServer final {
@@ -37,8 +36,7 @@ public:
 
     void handlePrepareReply(PrepareRes& reply);
     void handleAcceptReply(AcceptRes& reply);
-    void handleCommitReply(CommitRes& reply);
-    void handleSuccessReply(SuccessRes& reply);
+    void handleSyncReply(SyncRes& reply);
     
     bool processTransferCall(TransferReq* req, TransferRes* res);
     bool processGetBalanceCall(Balance* res);
@@ -46,8 +44,8 @@ public:
     bool processGetDBLogsCall(Logs* logs);
     bool processPrepareCall(PrepareReq* req, PrepareRes* res);
     bool processAcceptCall(AcceptReq* req, AcceptRes* res);
-    bool processCommitCall(CommitReq* req, CommitRes* res);
-    bool processSuccessCall(SuccessReq* req, SuccessRes* res);
+    bool processCommitCall(CommitReq* req);
+    bool processSyncCall(SyncReq* req, SyncRes* res);
 
     // bool isProposer();
     
@@ -76,8 +74,8 @@ private:
     int balance;
     int currentTransactionNum;
     std::chrono::time_point<std::chrono::system_clock> consensusDeadline;
-    const static int minBackoffMs = 5;
-    const static int maxBackoffMs = 25;
+    const static int minBackoffMs = 10;
+    const static int maxBackoffMs = 50;
     std::vector<types::Transaction> localLogs;
 
     types::Proposal myProposal;
@@ -111,7 +109,7 @@ private:
     bool awaitPrepareDecision;
     bool awaitAcceptDecision;
     bool awaitCommitDecision;
-    bool transferSuccess;
+    bool transferSync;
 
     std::string dbFilename;
 
@@ -119,11 +117,12 @@ private:
     void sendPrepareToCluster(PrepareReq& request);
     void sendAcceptToCluster(AcceptReq& request);
     void sendCommitToCluster(CommitReq& request);
+    void requestSync(std::string serverName);
 
     void sendPrepareAsync(PrepareReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
     void sendAcceptAsync(AcceptReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
     void sendCommitAsync(CommitReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
-    void sendSuccessAsync(SuccessReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
+    void sendSyncAsync(SyncReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
 
     void copyProposal(Proposal* to, types::Proposal from);
     void copyLogs(Logs* logs, std::vector<types::Transaction>& val);
@@ -131,7 +130,7 @@ private:
     void commitAcceptVal();
     void replicateBlock(std::string serverName, int blockId);
 
-    void doCommit();
+    void doCommit(std::vector<types::Transaction> logs);
     void setupDB();
     void getLocalLogsDB();
     void storeLocalLogDB(types::Transaction t);
@@ -139,7 +138,7 @@ private:
     void getSavedStateDB();
     void saveStateDB();
     void getCommittedLogsDB();
-    void commitLogsToDB();
+    void commitLogsToDB(std::vector<types::Transaction> logs);
 
     void resetConsensusDeadline();
 };

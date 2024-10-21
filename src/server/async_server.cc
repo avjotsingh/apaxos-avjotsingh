@@ -60,11 +60,10 @@ PaxosServer::PaxosServer(std::string serverName) {
   awaitPrepareDecision = false;
   awaitAcceptDecision = false;
   awaitCommitDecision = false;
-  transferSuccess = false;
 
   currentState_ = IDLE;
   
-  dbFilename = "../" + serverName + ".db";
+  dbFilename = serverName + ".db";
   
   setupDB();
   getSavedStateDB();
@@ -106,7 +105,7 @@ void PaxosServer::HandleRPCs() {
   new CallData(&service_, this, requestCQ.get(), types::PREPARE);
   new CallData(&service_, this, requestCQ.get(), types::ACCEPT);
   new CallData(&service_, this, requestCQ.get(), types::COMMIT);
-  new CallData(&service_, this, requestCQ.get(), types::SUCCESS);
+  new CallData(&service_, this, requestCQ.get(), types::SYNC);
 
   void* requestTag;
   bool requestOk;
@@ -164,6 +163,14 @@ void PaxosServer::sendCommitToCluster(CommitReq& request) {
   }
 }
 
+void PaxosServer::requestSync(std::string serverName) {
+    SyncReq req;
+    req.set_last_committed_block(lastCommittedBlock);
+    
+    int targetServerId = getServerIdFromName(serverName);
+    sendSyncAsync(req, stubs_[targetServerId - 1], std::chrono::system_clock::now() + std::chrono::seconds(rpcTimeoutSeconds));
+}
+
 void PaxosServer::sendPrepareAsync(PrepareReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline) {
   PaxosClientCall* call = new PaxosClientCall(this, responseCQ.get(), types::PREPARE);
   call->sendPrepare(request, stub_, deadline);
@@ -179,9 +186,9 @@ void PaxosServer::sendCommitAsync(CommitReq& request, std::unique_ptr<Paxos::Stu
   call->sendCommit(request, stub_, deadline);
 }
 
-void PaxosServer::sendSuccessAsync(SuccessReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline) {
-  PaxosClientCall* call = new PaxosClientCall(this, responseCQ.get(), types::SUCCESS);
-  call->sendSuccess(request, stub_, deadline);
+void PaxosServer::sendSyncAsync(SyncReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline) {
+  PaxosClientCall* call = new PaxosClientCall(this, responseCQ.get(), types::SYNC);
+  call->sendSync(request, stub_, deadline);
 }
 
 void PaxosServer::handlePrepareReply(PrepareRes& reply) {
@@ -227,13 +234,11 @@ void PaxosServer::handleAcceptReply(AcceptRes& reply) {
     return;
   }
 
-  if (reply.proposal().number() == myProposal.proposalNum && reply.ack()) {
+  std::cout << "accept reply" << reply.ack() << std::endl;
+
+  if (reply.proposal().number() == acceptNum.proposalNum && reply.ack()) {
     acceptSuccesses++;
-  } else if (reply.proposal().number() == myProposal.proposalNum && !reply.ack()) {
-    if (reply.has_last_committed_block()) {
-      // Synchronize the server
-      replicateBlock(reply.server_id(), reply.last_committed_block() + 1);
-    } 
+  } else {
     acceptFailures++;
   }
 
@@ -247,60 +252,31 @@ void PaxosServer::handleAcceptReply(AcceptRes& reply) {
   }
 }
 
-void PaxosServer::handleCommitReply(CommitRes& reply) {
-  if (currentState_ != COMMIT) {
-    // ignore commit replies
-    return;
-  }
+void PaxosServer::handleSyncReply(SyncRes& reply) {
+  std::string serverName = reply.server_id();
+  
+  if (reply.block_id() == lastCommittedBlock + 1) {
+    
+    types::TransactionBlock block;
+    block.id = reply.block_id();
+    block.commitProposal.proposalNum = reply.proposal().number();
+    block.commitProposal.serverName = reply.proposal().server_id();
 
-  if (reply.proposal().number() == myProposal.proposalNum && reply.ack()) {
-    commitSuccesses++;
-  } else if (reply.proposal().number() == myProposal.proposalNum && !reply.ack()) {
-    commitFailures++;
-  }
-
-  if (commitSuccesses >= MAJORITY) {
-    currentState_ = POST_COMMIT;
-    awaitCommitDecision = false;
-  } else if (commitFailures >= MAJORITY) {
-    currentState_ = IDLE;
-    resetConsensusDeadline();
-    awaitCommitDecision = false;
-  }
-}
-
-void PaxosServer::handleSuccessReply(SuccessRes& reply) {
-  if (!reply.ack()) {
-    // retry success rpc
-    replicateBlock(reply.server_id(), reply.last_committed_block() + 1);
-  } else {
-    // replicate subsequent blocks if the server is still lagging behind
-    if (reply.last_committed_block() < lastCommittedBlock) {
-      replicateBlock(reply.server_id(), reply.last_committed_block() + 1);
+    for (int i = 0; i < reply.block().logs_size(); i++) {
+      auto& t = reply.block().logs(i);
+      block.block.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
     }
-  }
-}
 
-void PaxosServer::replicateBlock(std::string serverName, int blockId) {
-  SuccessReq req;
-  Proposal* proposal = req.mutable_proposal();
-  proposal->set_number(committedBlocks.at(blockId - 1).commitProposal.proposalNum);
-  proposal->set_server_id(committedBlocks.at(blockId - 1).commitProposal.serverName);
+    committedBlocks.push_back(block);
+    if (reply.ack()) {
+      requestSync(reply.server_id());
+    }
+    
+    lastCommittedProposal.proposalNum = reply.proposal().number();
+    lastCommittedProposal.serverName = reply.proposal().server_id();
 
-  req.set_block_id(blockId);
-  
-  Logs* logs = req.mutable_block();
-  for (auto& log : committedBlocks.at(blockId).block) {
-    Transaction* t = logs->add_logs();
-    t->set_id(log.id);
-    t->set_sender(log.sender);
-    t->set_receiver(log.receiver);
-    t->set_amount(log.amount);
+    doCommit(block.block);
   }
-  
-  int serverId = getServerIdFromName(serverName);
-  std::chrono::time_point deadline = std::chrono::system_clock::now() + std::chrono::seconds(rpcTimeoutSeconds);
-  sendSuccessAsync(req, stubs_.at(serverId - 1), deadline);
 }
 
 void PaxosServer::copyProposal(Proposal* to, types::Proposal from) {
@@ -357,36 +333,6 @@ std::vector<types::Transaction> PaxosServer::getLogsForProposal() {
   return result;
 }
 
-void PaxosServer::commitAcceptVal() {
-  committedBlocks.push_back({ lastCommittedBlock, lastCommittedProposal, acceptVal });
-  commitLogsToDB();
-
-
-  // update balance and local logs
-  std::set<std::string> committedSet;
-  for (auto& t: acceptVal) {
-    // std::cout << "committing log " << t.id << ", " << t.sender << ", " << t.receiver << ", " << t.amount << std::endl;
-    committedSet.insert(t.toString());
-    // any transaction whose receiver is this server must add to the balance of this server
-    if (t.receiver == serverName) {
-      balance += t.amount;
-    }
-  }
-
-  std::vector<types::Transaction> updatedLocalLogs;
-  for (auto& t : localLogs) {
-    if (committedSet.find(t.toString()) == committedSet.end()) {
-      updatedLocalLogs.push_back(t);
-    }
-  }
-
-
-  // reset acceptNum and acceptVal
-  acceptNum.proposalNum = 0;
-  acceptNum.serverName = "";
-  acceptVal.clear();
-}
-
 bool PaxosServer::processTransferCall(TransferReq* req, TransferRes* res) {
 
   bool success;
@@ -394,7 +340,7 @@ bool PaxosServer::processTransferCall(TransferReq* req, TransferRes* res) {
   // std::cout << serverName << " transfer" << std::endl;
   // printf("%s [transfer] cs %d, cpn %d, psuc %d, pf %d, asuc %d, af %d, csuc %d, cf %d\n", serverName.c_str(), currentState_, myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures, commitSuccesses, commitFailures);
 
-  // printf("%s state %d. cpn %d. ps: %d. pf: %d. as: %d. af: %d. cs: %d. cf: %d\n", serverName.c_str(), currentState_,  myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures, commitSuccesses, commitFailures);
+  printf("%s state %d. cpn %d. ps: %d. pf: %d. as: %d. af: %d. cs: %d. cf: %d\n", serverName.c_str(), currentState_,  myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures, commitSuccesses, commitFailures);
   switch (currentState_) {
     case IDLE:
     case PROMISED:
@@ -402,7 +348,7 @@ bool PaxosServer::processTransferCall(TransferReq* req, TransferRes* res) {
       // server can process the client transaction
       if (req->amount() <= balance) {
         currentTransactionNum++;
-        Transaction t = { currentTransactionNum, serverName, req->receiver(), req->amount() };
+        types::Transaction t = { currentTransactionNum, serverName, req->receiver(), req->amount() };
         localLogs.push_back(t);
         balance -= req->amount();
 
@@ -437,7 +383,7 @@ bool PaxosServer::processTransferCall(TransferReq* req, TransferRes* res) {
         copyProposal(prepareReq.mutable_proposal(), myProposal);
         prepareReq.set_last_committed_block(lastCommittedBlock);
         
-        // printf("%s sending prepare with pn %d. ps: %d. pf: %d\n", serverName.c_str(), myProposal.proposalNum, prepareSuccesses, prepareFailures);
+        printf("%s sending prepare with pn %d. ps: %d. pf: %d\n", serverName.c_str(), myProposal.proposalNum, prepareSuccesses, prepareFailures);
 
         // send a prepare request to cluster
         awaitPrepareDecision = true;
@@ -477,7 +423,7 @@ bool PaxosServer::processTransferCall(TransferReq* req, TransferRes* res) {
         acceptSuccesses = 1;
         acceptFailures = 0;
 
-        // printf("%s sending accept with pn %d. ps: %d. pf: %d. as: %d. af: %d\n", serverName.c_str(), myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures);
+        printf("%s sending accept with pn %d. ps: %d. pf: %d. as: %d. af: %d\n", serverName.c_str(), myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures);
         awaitAcceptDecision = true;
         sendAcceptToCluster(acceptReq);
         resetConsensusDeadline();
@@ -489,11 +435,19 @@ bool PaxosServer::processTransferCall(TransferReq* req, TransferRes* res) {
     case COMMIT:
       CommitReq commitReq;
       copyProposal(commitReq.mutable_proposal(), myProposal);
-      commitReq.set_last_committed_block(lastCommittedBlock);
 
-      // printf("%s sending commit with pn %d. ps: %d. pf: %d. as: %d. af: %d. cs: %d. cf: %d\n", serverName.c_str(), myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures, commitSuccesses, commitFailures);
+      printf("%s sending commit with pn %d. ps: %d. pf: %d. as: %d. af: %d. cs: %d. cf: %d\n", serverName.c_str(), myProposal.proposalNum, prepareSuccesses, prepareFailures, acceptSuccesses, acceptFailures, commitSuccesses, commitFailures);
       sendCommitToCluster(commitReq);
-      postCommit();
+      lastCommittedProposal.proposalNum = acceptNum.proposalNum;
+      lastCommittedProposal.serverName = acceptNum.serverName;
+
+      doCommit(acceptVal);
+
+      acceptNum.proposalNum = 0;
+      acceptNum.serverName = "";
+      acceptVal.clear();
+
+      saveStateDB();
       success = true;
       break;
   }
@@ -531,6 +485,11 @@ bool PaxosServer::processPrepareCall(PrepareReq* req, PrepareRes* res) {
             res->set_ack(true);
             currentState_ = PROMISED;
             resetConsensusDeadline();
+
+            if (req->last_committed_block() > lastCommittedBlock) {
+              requestSync(req->proposal().server_id());
+            }
+
       } else {
         res->set_ack(false);
       }
@@ -544,7 +503,12 @@ bool PaxosServer::processPrepareCall(PrepareReq* req, PrepareRes* res) {
         copyProposal(res->mutable_accept_num(), acceptNum);
         copyLogs(res->mutable_accept_val(), acceptVal);
         res->set_ack(true);
+        currentState_ = ACCEPTED;
         resetConsensusDeadline();
+
+        if (req->last_committed_block() > lastCommittedBlock) {
+          requestSync(req->proposal().server_id());
+        }
       } else {
         res->set_ack(false);
       }
@@ -558,7 +522,6 @@ bool PaxosServer::processPrepareCall(PrepareReq* req, PrepareRes* res) {
 
 bool PaxosServer::processAcceptCall(AcceptReq* req, AcceptRes* res) {  
   res->mutable_proposal()->CopyFrom(req->proposal());
-  res->set_server_id(serverName);
 
   // accept the value conditionally 
   // [IDLE] : server was not issued any transaction, and was not involved in consensus
@@ -567,14 +530,18 @@ bool PaxosServer::processAcceptCall(AcceptReq* req, AcceptRes* res) {
   // [PROMISED] : server promised to receive value in response to prepare requests
   // [ACCEPTED] : minority server accepted a value in previous round. A new value is proposed in the second round since this server did not get a prepare request
   // [COMMIT] : A partition prevented the server from committing. In the meantime, a new leader came in and committed the accepted block
+
+  printf("%s accept. cs %d. cpn %d. an %d. rpn %d. lcb %d\n", serverName.c_str(), currentState_, myProposal.proposalNum, acceptNum.proposalNum, req->proposal().number(), lastCommittedBlock);
   if (currentState_ == IDLE || currentState_ == PREPARE || (currentState_ == PROPOSE && !awaitAcceptDecision)) {
-    if (req->proposal().number() >= myProposal.proposalNum) { //&& req->last_committed_block() >= lastCommittedBlock) {
-      // accept request is trying to insert at an index > lastCommitedBlock index
-      // the server is either in sync or needs to catch up
-      acceptNum.proposalNum = req->proposal().number();
-      acceptNum.serverName = req->proposal().server_id();
+    if (req->proposal().number() >= myProposal.proposalNum) {
+      myProposal.proposalNum = req->proposal().number();
+      myProposal.serverName = req->proposal().server_id(); 
       
       if (req->last_committed_block() == lastCommittedBlock) {
+        // the server is either in sync
+        acceptNum.proposalNum = req->proposal().number();
+        acceptNum.serverName = req->proposal().server_id();
+
         // server is in sync. no catch up needed
         acceptVal.clear();
         for (int i = 0; i < req->logs().logs_size(); i++) {
@@ -582,14 +549,17 @@ bool PaxosServer::processAcceptCall(AcceptReq* req, AcceptRes* res) {
           acceptVal.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
         }
         
+        std::cout << "setting accept success" << std::endl;
         res->set_ack(true);
         currentState_ = ACCEPTED;
         resetConsensusDeadline();
   
-      } else {
+      } else if (req->last_committed_block() > lastCommittedBlock) {
         // catch up needed
         res->set_ack(false);
-        res->set_last_committed_block(lastCommittedBlock);
+        requestSync(req->proposal().server_id());
+      } else {
+        res->set_ack(false);
       }
     } else {
       res->set_ack(false);
@@ -597,28 +567,34 @@ bool PaxosServer::processAcceptCall(AcceptReq* req, AcceptRes* res) {
 
     return true;
   } else if ((currentState_ == PROPOSE && awaitAcceptDecision) || currentState_ == ACCEPTED) {
-    if (req->proposal().number() >= acceptNum.proposalNum) { //&& req->last_committed_block() >= lastCommittedBlock) {
+    if (req->proposal().number() >= acceptNum.proposalNum) {
       // accept request is trying to insert at an index > lastCommitedBlock index
       // the server is either in sync or needs to catch up
-      acceptNum.proposalNum = req->proposal().number();
-      acceptNum.serverName = req->proposal().server_id();
+      myProposal.proposalNum = req->proposal().number();
+      myProposal.serverName = req->proposal().server_id(); 
       
       if (req->last_committed_block() == lastCommittedBlock) {
-        // server is in sync. no catch up needed
+        acceptNum.proposalNum = req->proposal().number();
+        acceptNum.serverName = req->proposal().server_id();
+
         acceptVal.clear();
         for (int i = 0; i < req->logs().logs_size(); i++) {
           const Transaction& t = req->logs().logs(i);
           acceptVal.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
         }
         
+        std::cout << "setting acceept success" << std::endl;
         res->set_ack(true);
         currentState_ = ACCEPTED;
         resetConsensusDeadline();
   
-      } else {
-        // catch up needed
+      } else if (req->last_committed_block() > lastCommittedBlock) {
+        // server is in sync. no catch up needed
         res->set_ack(false);
-        res->set_last_committed_block(lastCommittedBlock);
+        requestSync(req->proposal().server_id());
+        
+      } else {
+        res->set_ack(false);
       }
     } else {
       res->set_ack(false);
@@ -631,111 +607,87 @@ bool PaxosServer::processAcceptCall(AcceptReq* req, AcceptRes* res) {
   }
 }
 
-bool PaxosServer::processCommitCall(CommitReq* req, CommitRes* res) {
-  res->mutable_proposal()->CopyFrom(req->proposal());
+bool PaxosServer::processCommitCall(CommitReq* req) {
   // std::cout << "commit req cs" << currentState_ << std::endl;
   // std::cout << "commit req " << req->proposal().number() << " " << req->last_committed_block() << std::endl;
   // std::cout << "commit req accepted prop " << acceptNum.proposalNum << std::endl;
   
+  if (currentState_ == ACCEPTED && req->proposal().number() == acceptNum.proposalNum) {
+    lastCommittedProposal.proposalNum = req->proposal().number();
+    lastCommittedProposal.serverName = req->proposal().server_id();
 
-  switch (currentState_) {
-    case ACCEPTED:
-      // NOTE: we cannot have a case wherein req->proposal().number() == lastestProposal.number but req->proposal().server_id() != lastestProposal.serverName
-      // no need to reset consensus deadline
-      if (req->last_committed_block() < lastCommittedBlock) {
-        // the committer might have experienced network parition.
-        // in the meantime, another leader came up and committed the accepted block
-        // block has already been committed. ignore the request
-        // std::cout << " case 1" << std::endl;
-        res->set_ack(true);
-      } else if (req->last_committed_block() > lastCommittedBlock) {
-        // server is not in sync. cannot accept commit
-        // std::cout << " case 2" << std::endl;
-        res->set_ack(false);
-      } else if (req->proposal().number() > acceptNum.proposalNum) {
-        // server does not have the latest accepted value. so it cannot commit
-        // std::cout << " case 3" << std::endl;
-        res->set_ack(false);
-      } else if (req->proposal().number() < acceptNum.proposalNum) {
-        // committer is not a leader anymore
-        // std::cout << " case 4" << std::endl;
-        res->set_ack(false);
-      } else {
-        // Commit only if the server had accepted a value in the past
-        // and the proposal number from accept matches the proposal number from commit
-        lastCommittedBlock++;
-        lastCommittedProposal.proposalNum = req->proposal().number();
-        lastCommittedProposal.serverName = req->proposal().server_id();
-        commitAcceptVal();
-        
-        res->set_ack(true);
-        currentState_ = IDLE;      
-      }
+    doCommit(acceptVal);
+    acceptNum.proposalNum = 0;
+    acceptNum.serverName = "";
+    acceptVal.clear();
 
-      break;
-
-    default:
-      // std::cout << " case default" << std::endl;
-      res->set_ack(false);
-      break;
-
-  }
-  return true;
-}
-
-bool PaxosServer::processSuccessCall(SuccessReq* req, SuccessRes* res) {
-  // just make sure you are not adding a stale committed transaction block
-  if (currentState_ == POST_COMMIT) {
-    postCommit();
-  }
-
-  switch (currentState_) {
-    case IDLE:
-    case PREPARE:
-    case PROPOSE:
-    case PROMISED:
-    case ACCEPTED:
-    case COMMIT:
-      // scenarios same as those listed in processAcceptCall.
-      // If the server's committed log was behind, it would not have changed its state
-      // In response to sending failed ack, it is now receiving success RPCs
-      // no need to reset consensus deadline because server can start a consensus immediately after
-      if (req->proposal().number() > lastCommittedProposal.proposalNum && req->block_id() == lastCommittedBlock + 1) {
-        acceptVal.clear();
-        for (int i = 0; i < req->block().logs_size(); i++) {
-          const Transaction& t = req->block().logs(i);
-          acceptVal.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
-        }
-
-        lastCommittedBlock++;
-        lastCommittedProposal.proposalNum = req->proposal().number();
-        lastCommittedProposal.serverName = req->proposal().server_id();
-        commitAcceptVal();
-        
-        res->set_ack(true);
-        currentState_ = IDLE;      
-
-      } else {
-        res->set_ack(false);
-      }
-
-      res->set_server_id(serverName);
-      res->set_last_committed_block(lastCommittedBlock);
-      break;
+    currentState_ = IDLE;
     
-    default:
-      res->set_ack(false);
-  }
+  } else if (req->proposal().number() > myProposal.proposalNum) {
+    requestSync(req->proposal().server_id());
+  } 
 
   return true;
 }
 
-void PaxosServer::doCommit() {
+bool PaxosServer::processSyncCall(SyncReq* req, SyncRes* res) {
+  int requestedBlocK = req->last_committed_block() + 1;
+  if (committedBlocks.size() >= requestedBlocK) {
+    auto& block = committedBlocks.at(req->last_committed_block());  
+    res->set_block_id(block.id);
+    Proposal* p = res->mutable_proposal();
+    p->set_number(block.commitProposal.proposalNum);
+    p->set_server_id(block.commitProposal.serverName);
+    Logs* l = res->mutable_block();
+    for (auto& t: block.block) {
+      Transaction* transaction = l->add_logs();
+      transaction->set_id(t.id);
+      transaction->set_sender(t.sender);
+      transaction->set_receiver(t.receiver);
+      transaction->set_amount(t.amount);
+    }
+    res->set_server_id(serverName);
+  } else {
+    res->set_ack(false);
+  }
+  
+
+  return true;
+}
+
+void PaxosServer::doCommit(std::vector<types::Transaction> logs) {
   lastCommittedBlock++;
-  lastCommittedProposal.proposalNum = myProposal.proposalNum;
-  lastCommittedProposal.serverName = myProposal.serverName;
-  commitAcceptVal();
-  currentState_ = IDLE;
+
+  types::TransactionBlock block;
+  block.id = lastCommittedBlock;
+  block.commitProposal.proposalNum = lastCommittedProposal.proposalNum;
+  block.commitProposal.serverName = lastCommittedProposal.serverName;
+  for (auto& t: logs) {
+    block.block.push_back({ t.id, t.sender, t.receiver, t.amount });
+  }
+  committedBlocks.push_back(block);
+  
+  commitLogsToDB(logs);
+
+  // update local logs and balance
+  // set of committed logs
+  std::set<std::string> committedSet;
+  for (auto& block : committedBlocks) {
+    for (auto& t : block.block) {
+      if (t.receiver == serverName) balance += t.amount;
+      committedSet.insert(t.toString());
+    }
+  }
+
+  std::vector<types::Transaction> updatedLocalLogs;
+  for (auto& t : localLogs) {
+    if (committedSet.find(t.toString()) == committedSet.end()) {
+      updatedLocalLogs.push_back(t);
+    }
+  }
+
+  localLogs = updatedLocalLogs;
+  refreshLocalLogsDB();
 }
 
 void PaxosServer::setupDB() {
@@ -751,27 +703,28 @@ void PaxosServer::setupDB() {
           "sender CHAR(2) NOT NULL,"
           "receiver CHAR(2) NOT NULL,"
           "amount INTEGER NOT NULL"
-          ")");
+          ");");
 
       db.exec("CREATE TABLE IF NOT EXISTS local ("
           "transaction_id INTEGER NOT NULL,"
           "sender CHAR(2) NOT NULL,"
           "receiver CHAR(2) NOT NULL,"
           "amount INTEGER NOT NULL"
-          ")");
+          ");");
 
       db.exec("CREATE TABLE IF NOT EXISTS accept_val ("
           "transaction_id INTEGER NOT NULL,"
           "sender CHAR(2) NOT NULL,"
           "receiver CHAR(2) NOT NULL,"
           "amount INTEGER NOT NULL"
-          ")");
+          ");");
 
       db.exec("CREATE TABLE IF NOT EXISTS state ("
           "proposal_num INTEGER NOT NULL,"
           "accept_num CHAR(2) NOT NULL,"
-          "accept_num_server CHAR(2) NOT NULL,"
-          ")");
+          "accept_num_server CHAR(2) NOT NULL"
+          ");");
+
   } catch (SQLite::Exception& e) {
     std::cerr << "exception " << e.what() << std::endl;
   }
@@ -824,12 +777,12 @@ void PaxosServer::refreshLocalLogsDB() {
   try {
     // Open a database file
     SQLite::Database db(dbFilename.c_str(), SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
-    db.exec("BEGIN TRANSACTION");
+    db.exec("BEGIN TRANSACTION;");
     
-    SQLite::Statement del(db, "DELETE * FROM local");
+    SQLite::Statement del(db, "DELETE * FROM local;");
     del.exec();
 
-    SQLite::Statement insert(db, "INSERT INTO local (transaction_id, sender, receiver, amount) VALUES (?, ?, ?, ?)");
+    SQLite::Statement insert(db, "INSERT INTO local (transaction_id, sender, receiver, amount) VALUES (?, ?, ?, ?);");
     for (auto &t : localLogs) {
       insert.bind(1, t.id);
       insert.bind(2, t.sender);
@@ -838,7 +791,7 @@ void PaxosServer::refreshLocalLogsDB() {
       insert.exec();
       insert.reset();
     }
-    db.exec("COMMIT");
+    db.exec("COMMIT;");
     
   } catch (SQLite::Exception& e) {
     std::cerr << "exception " << e.what() << std::endl;
@@ -847,20 +800,23 @@ void PaxosServer::refreshLocalLogsDB() {
 
 void PaxosServer::getSavedStateDB() {
   try {
+    SQLite::Database db(dbFilename, SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
     SQLite::Statement query(db, "SELECT proposal_num, accept_num, accept_num_server FROM state;");
-    query.executeStep();
-    myProposal.proposalNum = query.getColumn(0);
-    acceptNum.proposalNum = query.getColumn(1);
-    acceptNum.serverName = query.getColumn(2);
-
+    
+    if (query.executeStep()) {
+      myProposal.proposalNum = query.getColumn(0);
+      acceptNum.proposalNum = query.getColumn(1);
+      acceptNum.serverName = query.getColumn(2).getString();
+    }
+    
     query.reset();
     acceptVal.clear();
-    query(db, "SELECT transaction_id, sender, receiver, amount FROM accept_val;");
-    while (query.executeStep()) {
-      int transaction_id = query.getColumn(0);
-      std::string sender = query.getColumn(1).toString();
-      std::string receiver = query.getColumn(1).toString();
-      int amount = query.getColumn(3);
+    SQLite::Statement query2(db, "SELECT transaction_id, sender, receiver, amount FROM accept_val;");
+    while (query2.executeStep()) {
+      int transaction_id = query2.getColumn(0);
+      std::string sender = query2.getColumn(1).getString();
+      std::string receiver = query2.getColumn(1).getString();
+      int amount = query2.getColumn(3);
 
       acceptVal.push_back({ transaction_id, sender, receiver, amount });
     }
@@ -872,8 +828,9 @@ void PaxosServer::getSavedStateDB() {
 
 void PaxosServer::saveStateDB() {
   try {
-    db.exec("BEGIN TRANSACTION;");
     SQLite::Database db(dbFilename, SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
+
+    db.exec("BEGIN TRANSACTION;");
     SQLite::Statement insert(db, "INSERT INTO state (proposal_num, accept_num, accept_num_server) VALUES (?, ?, ?);");
     insert.bind(1, myProposal.proposalNum);
     insert.bind(2, acceptNum.proposalNum);
@@ -881,14 +838,14 @@ void PaxosServer::saveStateDB() {
     insert.exec();
     insert.reset();
 
-    insert(db, "INSERT INTO accept_val (transaction_id, sender, receiver, amount) VALUES (?, ?, ?, ?);");
+    SQLite::Statement insert2(db, "INSERT INTO accept_val (transaction_id, sender, receiver, amount) VALUES (?, ?, ?, ?);");
     for (auto &t : localLogs) {
-      insert.bind(1, t.id);
-      insert.bind(2, t.sender);
-      insert.bind(3, t.receiver);
-      insert.bind(4, t.amount);
-      insert.exec();
-      insert.reset();
+      insert2.bind(1, t.id);
+      insert2.bind(2, t.sender);
+      insert2.bind(3, t.receiver);
+      insert2.bind(4, t.amount);
+      insert2.exec();
+      insert2.reset();
     }
     db.exec("COMMIT;");
   } catch (SQLite::Exception& e) {
@@ -928,10 +885,10 @@ void PaxosServer::getCommittedLogsDB() {
 
     lastCommittedBlock = committedBlocks.size();
     if (lastCommittedBlock > 0) {
-      lastCommittedProposal.proposalNum = committedBlocks.at(committedBlocks.size() - 1).proposal.proposalNum;
-      lastCommittedProposal.serverName = committedBlocks.at(committedBlocks.size() - 1).proposal.serverName;
+      lastCommittedProposal.proposalNum = committedBlocks.at(committedBlocks.size() - 1).commitProposal.proposalNum;
+      lastCommittedProposal.serverName = committedBlocks.at(committedBlocks.size() - 1).commitProposal.serverName;
     } else {
-      lastCommittedProposal.proposalNum = 0
+      lastCommittedProposal.proposalNum = 0;
       lastCommittedProposal.serverName = "";
     }
 
@@ -940,14 +897,14 @@ void PaxosServer::getCommittedLogsDB() {
   }
 }
 
-void PaxosServer::commitLogsToDB() {
+void PaxosServer::commitLogsToDB(std::vector<types::Transaction> logs) {
   try    {
     SQLite::Database db(dbFilename, SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
     
     db.exec("BEGIN TRANSACTION;");
-    SQLite::Statement insert(db, "INSERT INTO logs (block_id, proposal_num, proposer, transaction_id, sender, receiver, amount) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    SQLite::Statement insert(db, "INSERT INTO logs (block_id, proposal_num, proposer, transaction_id, sender, receiver, amount) VALUES (?, ?, ?, ?, ?, ?, ?);");
     
-    for (const auto& t : acceptVal) {
+    for (const auto& t : logs) {
       insert.bind(1, lastCommittedBlock);
       insert.bind(2, lastCommittedProposal.proposalNum);
       insert.bind(3, lastCommittedProposal.serverName);

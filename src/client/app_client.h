@@ -19,9 +19,7 @@ using grpc::Status;
 using paxos::Paxos;
 using paxos::PrepareRes;
 using paxos::AcceptRes;
-using paxos::CommitRes;
 using paxos::TransferRes;
-using paxos::SuccessRes;
 using paxos::Balance;
 using paxos::Logs;
 

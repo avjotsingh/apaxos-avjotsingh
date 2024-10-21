@@ -16,10 +16,9 @@ void PaxosClientCall::HandleRPCResponse() {
             server_->handleAcceptReply(acceptReply);
             break;
         case types::COMMIT:
-            server_->handleCommitReply(commitReply);
             break;
-        case types::SUCCESS:
-            server_->handleSuccessReply(successReply);
+        case types::SYNC:
+            server_->handleSyncReply(syncReply);
             break;
         default:
             break;
@@ -49,9 +48,9 @@ void PaxosClientCall::sendCommit(CommitReq& request, std::unique_ptr<Paxos::Stub
     commitResponseReader->Finish(&commitReply, &status, (void*)this);
 }
 
-void PaxosClientCall::sendSuccess(SuccessReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline) {    
+void PaxosClientCall::sendSync(SyncReq& request, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline) {    
     context.set_deadline(deadline);
-    successResponseReader = stub_->PrepareAsyncSuccess(&context, request, cq_);
-    successResponseReader->StartCall();
-    successResponseReader->Finish(&successReply, &status, (void*)this);
+    syncResponseReader = stub_->PrepareAsyncSync(&context, request, cq_);
+    syncResponseReader->StartCall();
+    syncResponseReader->Finish(&syncReply, &status, (void*)this);
 }

@@ -47,7 +47,7 @@ void Utils::startServer(std::string serverName) {
         }
     }
 
-    sleep(2);
+    // sleep(2);
 }
 
 void Utils::killServer(std::string serverName) {
@@ -69,5 +69,5 @@ void Utils::killServer(std::string serverName) {
         }
     }
 
-    sleep(1);
+    // sleep(1);
 }

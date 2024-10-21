@@ -23,9 +23,8 @@ using paxos::PrepareRes;
 using paxos::AcceptReq;
 using paxos::AcceptRes;
 using paxos::CommitReq;
-using paxos::CommitRes;
-using paxos::SuccessReq;
-using paxos::SuccessRes;
+using paxos::SyncReq;
+using paxos::SyncRes;
 
 class CallData {
 public:
@@ -54,9 +53,9 @@ private:
     AcceptReq acceptReq;
     AcceptRes acceptRes;
     CommitReq commitReq;
-    CommitRes commitRes;
-    SuccessReq successReq;
-    SuccessRes successRes;
+    Empty commitRes;
+    SyncReq syncReq;
+    SyncRes syncRes;
 
     // The means to get back to the client.
     ServerAsyncResponseWriter<TransferRes> transferResponder;
@@ -65,8 +64,8 @@ private:
     ServerAsyncResponseWriter<Logs> getDBLogsResponder;
     ServerAsyncResponseWriter<PrepareRes> prepareResponder;
     ServerAsyncResponseWriter<AcceptRes> acceptResponder;
-    ServerAsyncResponseWriter<CommitRes> commitResponder;
-    ServerAsyncResponseWriter<SuccessRes> successResponder;
+    ServerAsyncResponseWriter<google::protobuf::Empty> commitResponder;
+    ServerAsyncResponseWriter<SyncRes> syncResponder;
 
     // Let's implement a tiny state machine with the following states.
     enum CallStatus { CREATE, PROCESS, RETRY, FINISH };

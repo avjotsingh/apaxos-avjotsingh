@@ -16,7 +16,7 @@ CallData::CallData(Paxos::AsyncService* service, PaxosServer* server, ServerComp
             prepareResponder(&ctx_),
             acceptResponder(&ctx_),
             commitResponder(&ctx_),
-            successResponder(&ctx_) {
+            syncResponder(&ctx_) {
         service_ = service;
         server_ = server;
         cq_ = cq;
@@ -52,8 +52,8 @@ void CallData::Proceed() {
             case types::COMMIT:
                 service_->RequestCommit(&ctx_, &commitReq, &commitResponder, cq_, cq_, this);
                 break;
-            case types::SUCCESS:
-                service_->RequestSuccess(&ctx_, &successReq, &successResponder, cq_, cq_, this);
+            case types::SYNC:
+                service_->RequestSync(&ctx_, &syncReq, &syncResponder, cq_, cq_, this);
                 break;
         }
         
@@ -123,7 +123,7 @@ void CallData::Proceed() {
                 }
                 break;
             case types::COMMIT:
-                if (server_->processCommitCall(&commitReq, &commitRes)) {
+                if (server_->processCommitCall(&commitReq)) {
                     commitResponder.Finish(commitRes, Status::OK, this);
                     status_ = FINISH;
                 } else {
@@ -131,9 +131,9 @@ void CallData::Proceed() {
                     Retry();
                 }
                 break;
-            case types::SUCCESS:
-                if (server_->processSuccessCall(&successReq, &successRes)) {
-                    successResponder.Finish(successRes, Status::OK, this);
+            case types::SYNC:
+                if (server_->processSyncCall(&syncReq, &syncRes)) {
+                    syncResponder.Finish(syncRes, Status::OK, this);
                     status_ = FINISH;
                 } else {
                     status_ = RETRY;

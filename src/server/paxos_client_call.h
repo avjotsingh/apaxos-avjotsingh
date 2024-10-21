@@ -25,9 +25,8 @@ using paxos::PrepareRes;
 using paxos::AcceptReq;
 using paxos::AcceptRes;
 using paxos::CommitReq;
-using paxos::CommitRes;
-using paxos::SuccessReq;
-using paxos::SuccessRes;
+using paxos::SyncReq;
+using paxos::SyncRes;
 
 // struct for keeping state and data information
 class PaxosClientCall {
@@ -37,7 +36,7 @@ public:
     void sendPrepare(PrepareReq& req, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
     void sendAccept(AcceptReq& req, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
     void sendCommit(CommitReq& req, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
-    void sendSuccess(SuccessReq& req, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
+    void sendSync(SyncReq& req, std::unique_ptr<Paxos::Stub>& stub_, std::chrono::time_point<std::chrono::system_clock> deadline);
     void HandleRPCResponse();
 
 private:
@@ -48,8 +47,8 @@ private:
     // Container for the data we expect from the server.
     PrepareRes prepareReply;
     AcceptRes acceptReply;
-    CommitRes commitReply;
-    SuccessRes successReply;
+    google::protobuf::Empty commitReply;
+    SyncRes syncReply;
 
     // Context for the client. It could be used to convey extra information to
     // the server and/or tweak certain RPC behaviors.
@@ -60,7 +59,7 @@ private:
 
     std::unique_ptr<ClientAsyncResponseReader<PrepareRes>> prepareResponseReader;
     std::unique_ptr<ClientAsyncResponseReader<AcceptRes>> acceptResponseReader;
-    std::unique_ptr<ClientAsyncResponseReader<CommitRes>> commitResponseReader;
-    std::unique_ptr<ClientAsyncResponseReader<SuccessRes>> successResponseReader;
+    std::unique_ptr<ClientAsyncResponseReader<google::protobuf::Empty>> commitResponseReader;
+    std::unique_ptr<ClientAsyncResponseReader<SyncRes>> syncResponseReader;
 };
 

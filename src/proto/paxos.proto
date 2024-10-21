@@ -28,10 +28,10 @@ service Paxos {
     rpc Accept (AcceptReq) returns (AcceptRes) {}
 
     // Function to commit a transaction block
-    rpc Commit (CommitReq) returns (CommitRes) {}
+    rpc Commit (CommitReq) returns (google.protobuf.Empty) {}
 
     // Function to replicate transaction block
-    rpc Success (SuccessReq) returns (SuccessRes) {}
+    rpc Sync (SyncReq) returns (SyncRes) {}
 }
 
 
@@ -99,32 +99,23 @@ message AcceptReq {
 message AcceptRes {
     bool ack = 1;
     Proposal proposal = 2;
-    string server_id = 3;
-    optional int32 last_committed_block = 4;    // needed for server to decide whether to catch-up or not
 }
 
 // Commit request sent by proposer
 message CommitReq {
     Proposal proposal = 1;
-    int32 last_committed_block = 2;
-}
-
-// Commit response sent by acceptor
-message CommitRes {
-    bool ack = 1;
-    Proposal proposal = 2;
 }
 
 // Combination of AcceptReq + CommitReq (used for catch up)
-message SuccessReq {
+message SyncReq {
     // proposal number corresponding to the committed block
-    Proposal proposal = 1;
-    int32 block_id = 2;
-    Logs block = 4;
+    int32 last_committed_block = 1;
 }
 
-message SuccessRes {
+message SyncRes {
     bool ack = 1;
-    string server_id = 2;
-    int32 last_committed_block = 3;
+    int32 block_id = 2;
+    Proposal proposal = 3;
+    Logs block = 4;
+    string server_id = 5;
 }
