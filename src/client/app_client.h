@@ -22,6 +22,8 @@ using paxos::AcceptRes;
 using paxos::TransferRes;
 using paxos::Balance;
 using paxos::Logs;
+using paxos::DBLogs;
+using paxos::TransactionBlock;
 
 
 class AppClient {
@@ -30,7 +32,7 @@ public:
     void processTransactions(std::vector<types::Transaction> transactions);
     void GetBalance(std::string serverName, int& res);
     void GetLogs(std::string serverName, std::vector<types::Transaction>& logs);
-    void GetDBLogs(std::string serverName, std::vector<types::Transaction>& logs);
+    void GetDBLogs(std::string serverName, std::vector<types::TransactionBlock>& blocks);
     
     
 private:
@@ -50,7 +52,7 @@ private:
         TransferRes transferReply;
         Balance getBalanceReply;
         Logs getLogsReply;
-        Logs getDBLogsReply;
+        DBLogs getDBLogsReply;
 
         // Context for the client. It could be used to convey extra information to
         // the server and/or tweak certain RPC behaviors.
@@ -62,7 +64,7 @@ private:
         std::unique_ptr<ClientAsyncResponseReader<TransferRes>> transferResponseReader;
         std::unique_ptr<ClientAsyncResponseReader<Balance>> balanceResponseReader;
         std::unique_ptr<ClientAsyncResponseReader<Logs>> logsResponseReader;
-        std::unique_ptr<ClientAsyncResponseReader<Logs>> dbLogsResponseReader;
+        std::unique_ptr<ClientAsyncResponseReader<DBLogs>> dbLogsResponseReader;
     };
 
 

@@ -19,7 +19,7 @@ void mainloop(CSVReader* reader, AppClient* client) {
     types::TransactionSet set;
     int balance;
     std::vector<types::Transaction> logs;
-    std::vector<types::Transaction> dbLogs;
+    std::vector<types::TransactionBlock> dbLogs;
 
 
     while(!exit) {
@@ -35,8 +35,9 @@ void mainloop(CSVReader* reader, AppClient* client) {
 
         try {
             switch (c.command) {
+                sleep(5);
                 case types::PROCESS_NEXT_SET:
-                    std::cout << "Processing next set of transactions...";
+                    std::cout << "=================================================================";
                     if (!reader->readNextSet(set)) {
                         std::cout << "No more transaction sets to read..." << std::endl;
                     } else {
@@ -50,7 +51,9 @@ void mainloop(CSVReader* reader, AppClient* client) {
                                 Utils::killServer(s);
                             }
                         }
+                        sleep(5);
                         client->processTransactions(set.transactions);
+                        sleep(10);
                     }
                     break;
                 case types::PRINT_BALANCE:
@@ -62,16 +65,21 @@ void mainloop(CSVReader* reader, AppClient* client) {
                     client->GetLogs(c.serverName, logs);
                     std::cout << "Local logs on " << c.serverName << ": " << std::endl;
                     for (types::Transaction& t: logs) {
-                        std::cout << "(" << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
+                        std::cout << "(" << t.id << ", " << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
                     }
                     break;
                 case types::PRINT_DB:
                     dbLogs.clear();
                     client->GetDBLogs(c.serverName, dbLogs);
                     std::cout << "DB logs on " << c.serverName << ": " << std::endl;
-                    for (types::Transaction& t: dbLogs) {
-                        std::cout << "(" << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
+                    for (auto& block : dbLogs) {
+                        std::cout << "> Block" << block.id << std::endl;
+                        for (types::Transaction& t: block.block) {
+                            std::cout << "(" << t.id << ", " << t.sender << ", " << t.receiver << ", " << t.amount << ")" << std::endl;
+                        }
                     }
+                    
+                    
                     break;
                 case types::EXIT:
                     std::cout << "Exiting..." << std::endl;

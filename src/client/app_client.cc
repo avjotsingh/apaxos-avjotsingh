@@ -38,21 +38,21 @@ void AppClient::processTransactions(std::vector<types::Transaction> transactions
     int requestsIssued = 0;
     std::vector<bool> issued(transactions.size(), false);
 
-    while (requestsIssued < transactions.size()) {
-        checkAndConsumeTransferReply();
+    // while (requestsIssued < transactions.size()) {
+        // checkAndConsumeTransferReply();
         for (int i = 0; i < transactions.size(); i++) {
             auto& t = transactions[i];
-            if (issued[i] || transferringServers.find(t.sender) != transferringServers.end()) {
-                continue;
-            } else {
-                std::cout << "issuing " << t.sender << ", " << t.receiver << ", " << t.amount << std::endl;
-                transferringServers.insert(t.sender);
+            // if (issued[i] || transferringServers.find(t.sender) != transferringServers.end()) {
+                // continue;
+            // } else {
+                // std::cout << "issuing " << t.sender << ", " << t.receiver << ", " << t.amount << std::endl;
+                // transferringServers.insert(t.sender);
                 sendTransferAsync(t.sender, t.receiver, t.amount);
-                issued[i] = true;
-                requestsIssued++;
-            }
+                // issued[i] = true;
+                // requestsIssued++;
+            // }
         }
-    }
+    // }
 }
 
 void AppClient::GetBalance(std::string serverName, int& res) {
@@ -110,7 +110,7 @@ void AppClient::GetLogs(std::string serverName, std::vector<types::Transaction>&
     }
 }
 
-void AppClient::GetDBLogs(std::string serverName, std::vector<types::Transaction>& logs) {
+void AppClient::GetDBLogs(std::string serverName, std::vector<types::TransactionBlock>& blocks) {
     sendGetDBLogsAsync(serverName);
 
     void* tag;
@@ -124,9 +124,19 @@ void AppClient::GetDBLogs(std::string serverName, std::vector<types::Transaction
                 if (!call->status.ok()) {
                     std::cout << call->status.error_message() << std::endl;
                 } else if (call->callType_ == types::GET_DB_LOGS) {
-                    for (int i = 0; i < call->getDBLogsReply.logs_size(); i++) {
-                        const Transaction& t = call->getDBLogsReply.logs(i);
-                        logs.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
+                    for (int i = 0; i < call->getDBLogsReply.blocks_size(); i++) {
+                        const TransactionBlock& b = call->getDBLogsReply.blocks(i);
+                        types::TransactionBlock block;
+                        block.id = b.block_id();
+                        block.commitProposal.proposalNum = b.proposal().number();
+                        block.commitProposal.serverName = b.proposal().server_id();
+
+                        for (int j = 0; j < b.logs().logs_size(); j++) {
+                            const Transaction& t = b.logs().logs(j);
+                            block.block.push_back({ t.id(), t.sender(), t.receiver(), t.amount() });
+                        }
+
+                        blocks.push_back(block);
                     }
 
                     delete call;

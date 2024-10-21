@@ -18,6 +18,8 @@ using paxos::TransferReq;
 using paxos::TransferRes;
 using paxos::Balance;
 using paxos::Logs;
+using paxos::DBLogs;
+using paxos::TransactionBlock;
 using paxos::PrepareReq;
 using paxos::PrepareRes;
 using paxos::AcceptReq;
@@ -41,7 +43,7 @@ public:
     bool processTransferCall(TransferReq* req, TransferRes* res);
     bool processGetBalanceCall(Balance* res);
     bool processGetLogsCall(Logs* logs);
-    bool processGetDBLogsCall(Logs* logs);
+    bool processGetDBLogsCall(DBLogs* blocks);
     bool processPrepareCall(PrepareReq* req, PrepareRes* res);
     bool processAcceptCall(AcceptReq* req, AcceptRes* res);
     bool processCommitCall(CommitReq* req);
@@ -68,14 +70,14 @@ private:
 
     int rpcTimeoutSeconds;
 
-    enum ServerState { IDLE, PREPARE, PROPOSE, COMMIT, PROMISED, ACCEPTED };
+    enum ServerState { IDLE, PREPARE, PROPOSE, COMMIT, PROMISED, ACCEPTED, SYNC };
     ServerState currentState_;
     
     int balance;
     int currentTransactionNum;
     std::chrono::time_point<std::chrono::system_clock> consensusDeadline;
-    const static int minBackoffMs = 10;
-    const static int maxBackoffMs = 50;
+    const static int minBackoffMs = 100;
+    const static int maxBackoffMs = 200;
     std::vector<types::Transaction> localLogs;
 
     types::Proposal myProposal;
@@ -130,7 +132,7 @@ private:
     void commitAcceptVal();
     void replicateBlock(std::string serverName, int blockId);
 
-    void doCommit(std::vector<types::Transaction> logs);
+    void doCommit(int commitProposalNum, std::string commitProposalServer, std::vector<types::Transaction> logs);
     void setupDB();
     void getLocalLogsDB();
     void storeLocalLogDB(types::Transaction t);

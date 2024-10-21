@@ -19,7 +19,7 @@ service Paxos {
     rpc GetLogs (google.protobuf.Empty) returns (Logs) {}
 
     // Function to print server's persisted transaction blocks
-    rpc GetDBLogs (google.protobuf.Empty) returns (Logs) {}
+    rpc GetDBLogs (google.protobuf.Empty) returns (DBLogs) {}
 
     // Function to send prepare request
     rpc Prepare (PrepareReq) returns (PrepareRes) {}
@@ -73,6 +73,16 @@ message Logs {
     repeated Transaction logs = 1;
 }
 
+message TransactionBlock {
+    int32 block_id = 1;
+    Proposal proposal = 2;
+    Logs logs = 3;
+}
+
+message DBLogs {
+    repeated TransactionBlock blocks = 1;
+}
+
 // The prepare message to initiate consensus
 message PrepareReq {
     Proposal proposal = 1;
@@ -83,9 +93,11 @@ message PrepareReq {
 message PrepareRes {
     bool ack = 1;
     Proposal proposal = 2;
-    optional Proposal accept_num = 3;
-    optional Logs accept_val = 4;
+    string server_id = 3;
+    int32 last_committed_block = 4;
     optional Logs logs = 5;
+    optional Proposal accept_num = 6;
+    optional Logs accept_val = 7;
 }
 
 // Accept request sent by proposer

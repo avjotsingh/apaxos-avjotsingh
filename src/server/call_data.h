@@ -18,6 +18,7 @@ using paxos::TransferReq;
 using paxos::TransferRes;
 using paxos::Balance;
 using paxos::Logs;
+using paxos::DBLogs;
 using paxos::PrepareReq;
 using paxos::PrepareRes;
 using paxos::AcceptReq;
@@ -47,7 +48,7 @@ private:
     Empty getLogsReq;
     Logs getLogsRes;
     Empty getDBLogsReq;
-    Logs getDBLogsRes;
+    DBLogs getDBLogsRes;
     PrepareReq prepareReq;
     PrepareRes prepareRes;
     AcceptReq acceptReq;
@@ -61,7 +62,7 @@ private:
     ServerAsyncResponseWriter<TransferRes> transferResponder;
     ServerAsyncResponseWriter<Balance> getBalanceResponder;
     ServerAsyncResponseWriter<Logs> getLogsResponder;
-    ServerAsyncResponseWriter<Logs> getDBLogsResponder;
+    ServerAsyncResponseWriter<DBLogs> getDBLogsResponder;
     ServerAsyncResponseWriter<PrepareRes> prepareResponder;
     ServerAsyncResponseWriter<AcceptRes> acceptResponder;
     ServerAsyncResponseWriter<google::protobuf::Empty> commitResponder;
