@@ -103,7 +103,6 @@ void AppClient::GetBalance(std::string serverName, int& res) {
                 if (!call->status.ok()) {
                     std::cout << call->status.error_message() << std::endl;
                 } else {
-                    std::cout << "got get balance reply " << std::endl;
                     res = call->getBalanceReply.amount();
                     delete call;
                     break;
