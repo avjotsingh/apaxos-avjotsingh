@@ -84,8 +84,8 @@ private:
     int transactionsIssued;
     int transactionsProcessed;
 
-    std::map<int, std::chrono::high_resolution_clock::time_point> startTimes;
-    std::chrono::high_resolution_clock::duration totalTimeTaken;
+    std::map<int, std::chrono::system_clock::time_point> startTimes;
+    double totalTimeTaken;
     std::set<std::string> transferringServers;
     std::shared_mutex transferringServersMutex;
 };

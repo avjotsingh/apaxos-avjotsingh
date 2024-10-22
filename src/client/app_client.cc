@@ -55,9 +55,12 @@ void AppClient::consumeTransferReplies() {
             std::string serverId = call->transferReply.server_id();
             transferringServers.erase(serverId);
             
-            std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
-            totalTimeTaken += (endTime - startTimes[tid]);
-            performance = ((1e6) * transactionsProcessed) / std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeTaken).count();
+            std::chrono::system_clock::time_point endTime = std::chrono::system_clock::now();
+            double diff = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTimes[tid]).count();
+            startTimes.erase(tid);
+            
+            totalTimeTaken += diff;
+            performance = (1000 * transactionsProcessed) / totalTimeTaken;
         } else {
             std::cout << "Transfer RPC failed " << call->status.error_message() << std::endl;
         }
@@ -81,8 +84,8 @@ void AppClient::processTransactions(std::vector<types::Transaction> transactions
                 // std::cout << "issuing " << t.sender << ", " << t.receiver << ", " << t.amount << std::endl;
                 transactionsIssued++;
                 transferringServers.insert(t.sender);
-                startTimes[transactionsIssued] = std::chrono::high_resolution_clock::now();
-                sendTransferAsync(++transactionsIssued, t.sender, t.receiver, t.amount);
+                startTimes[transactionsIssued] = std::chrono::system_clock::now();
+                sendTransferAsync(transactionsIssued, t.sender, t.receiver, t.amount);
                 issued[i] = true;
                 requestsIssued++;
             }
@@ -183,6 +186,8 @@ void AppClient::GetDBLogs(std::string serverName, std::vector<types::Transaction
 
 double AppClient::GetPerformance() {
     std::shared_lock<std::shared_mutex> lock(performanceMutex);
+    std::cout << "Transactions Processed: " << transactionsIssued << std::endl;
+    std::cout << "Time taken (ms): " << totalTimeTaken << std::endl;
     return performance;
 }
 
