@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <chrono>
+#include <shared_mutex>
 
 #include <grpcpp/grpcpp.h>
 #include "paxos.grpc.pb.h"
@@ -33,12 +35,14 @@ public:
     void GetBalance(std::string serverName, int& res);
     void GetLogs(std::string serverName, std::vector<types::Transaction>& logs);
     void GetDBLogs(std::string serverName, std::vector<types::TransactionBlock>& blocks);
+    double GetPerformance();
+    void consumeTransferReplies();
     
     
 private:
     int getServerIdFromName(std::string serverName);
     void checkAndConsumeTransferReply();
-    bool sendTransferAsync(std::string sender, std::string receiver, int amount);
+    bool sendTransferAsync(int transaction_id, std::string sender, std::string receiver, int amount);
     bool sendGetLogsAsync(std::string serverName);
     bool sendGetDBLogsAsync(std::string serverName);
     bool sendGetBalanceAsync(std::string serverName);
@@ -67,7 +71,6 @@ private:
         std::unique_ptr<ClientAsyncResponseReader<DBLogs>> dbLogsResponseReader;
     };
 
-
     // servers' exposed services.
     std::vector<std::unique_ptr<Paxos::Stub>> stubs_;
 
@@ -75,7 +78,14 @@ private:
     // gRPC runtime.
     CompletionQueue cq_;
 
-    // map to keep track of servers with ongoing transfer requests
-    // servers with ongoing transfer are not issued new transfer requests
+    double performance;
+    std::shared_mutex performanceMutex;
+    
+    int transactionsIssued;
+    int transactionsProcessed;
+
+    std::map<int, std::chrono::high_resolution_clock::time_point> startTimes;
+    std::chrono::high_resolution_clock::duration totalTimeTaken;
     std::set<std::string> transferringServers;
+    std::shared_mutex transferringServersMutex;
 };

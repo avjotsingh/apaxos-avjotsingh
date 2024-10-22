@@ -41,14 +41,16 @@ service Paxos {
 
 // Money transfer request
 message TransferReq {
-    string receiver = 1;
-    int32 amount = 2;
+    int32 id = 1;
+    string receiver = 2;
+    int32 amount = 3;
 }
 
 // Response to money transfer request
 message TransferRes {
     bool ack = 1;
-    string server_id = 2;
+    int32 id = 2;
+    string server_id = 3;
 }
 
 message Balance {

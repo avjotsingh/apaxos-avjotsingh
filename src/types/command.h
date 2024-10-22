@@ -7,6 +7,7 @@ namespace types {
         PRINT_BALANCE,
         PRINT_LOG,
         PRINT_DB,
+        PRINT_PERFORMANCE,
         EXIT
     };
 

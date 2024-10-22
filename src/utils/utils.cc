@@ -27,27 +27,20 @@ void Utils::startServer(std::string serverName) {
         throw std::invalid_argument("Invalid server name: " + serverName);
     } 
     
-    if (Utils::serverPIDs.find(serverName) != Utils::serverPIDs.end()) {
-        std::cout << "Server " << serverName << " already running" << std::endl;
-        return;
-    } else {
+    if (Utils::serverPIDs.find(serverName) == Utils::serverPIDs.end()) {
         std::string targetAddress = it->second;
         pid_t pid = fork();
         if (pid < 0) {
             throw std::runtime_error("Failed to start server: " + serverName);
         } else if (pid > 0) {
             Utils::serverPIDs.insert({ serverName, pid });
-            std::cout << "Started server " + serverName + " on " + targetAddress << "..." << std::endl;
         } else {
             // server process
             execl("./paxosserver", "paxosserver", serverName.c_str(), targetAddress.c_str(), nullptr);
-
             // if execl fails
             throw std::runtime_error("Failed to start server: " + serverName);
         }
     }
-
-    // sleep(2);
 }
 
 void Utils::killServer(std::string serverName) {
@@ -57,17 +50,13 @@ void Utils::killServer(std::string serverName) {
     }
 
     auto it2 = Utils::serverPIDs.find(serverName);
-    if (it2 == Utils::serverPIDs.end()) {
-        std::cout << "Server " << serverName << " not running" << std::endl;
-    } else {
+    if (it2 != Utils::serverPIDs.end()) {
         pid_t pid = it2->second;
         if (kill(pid, SIGKILL) == 0) {
+            std::cout << "Killing server " << serverName << std::endl;
             Utils::serverPIDs.erase(serverName);
-            std::cout << "Killed server " << serverName << "..." <<  std::endl;
         } else {
             throw std::runtime_error("Failed to kill server: " + serverName);
         }
     }
-
-    // sleep(1);
 }
