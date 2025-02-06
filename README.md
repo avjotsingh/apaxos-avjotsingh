@@ -161,3 +161,7 @@ An example CSV file is available under the test directory
 $ cd build
 $ ./driver <csv_filepath>
 ```
+
+
+## References
+1. Lamport, Leslie. “Paxos Made Simple.” (2001).
